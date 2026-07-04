@@ -89,3 +89,4 @@ lib/
 - No persistence between reloads (Copilot conversation resets on refresh).
 - Charts/tables use representative, not live, figures.
 # inventory
+# inventory
