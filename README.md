@@ -88,5 +88,8 @@ lib/
 - No backend, auth, database, or real AI model — everything is mock data.
 - No persistence between reloads (Copilot conversation resets on refresh).
 - Charts/tables use representative, not live, figures.
-# inventory
-# inventory
+## Backend / AI integration
+
+The Member 2 backend lives in `backend/` as a separate FastAPI service. It includes PostgreSQL models and Alembic migrations, JWT auth, chat memory, LangGraph orchestration, Groq/OpenAI LLM integration, mock seed data, and Docker Compose.
+
+See `backend/README.md` for setup and run instructions.

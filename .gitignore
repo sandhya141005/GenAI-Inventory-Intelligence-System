@@ -1,5 +1,10 @@
 # dependencies
 /node_modules
+/.backend-venv
+backend/.venv
+backend/venv
+__pycache__/
+*.py[cod]
 /.pnp
 .pnp.js
 .yarn/install-state.gz
