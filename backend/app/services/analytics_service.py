@@ -80,16 +80,168 @@ class AnalyticsService:
 
     def recommendations(self) -> dict:
         recommendations: list[dict] = []
-        for metric in self._inventory_metrics():
-            if metric.days_of_coverage < 3:
-                recommendations.append(self._recommendation(metric, "Critical Reorder", "critical", "Replenish Stock"))
-            if metric.overstock:
-                recommendations.append(self._recommendation(metric, "Overstock Reduction", "medium", "Reduce Overstock"))
-            if metric.demand_spike:
-                recommendations.append(self._recommendation(metric, "Transfer Suggested", "high", "Transfer Inventory"))
-            if metric.inventory_age_days > 60:
-                recommendations.append(self._recommendation(metric, "Markdown Suggested", "medium", "Create Markdown"))
-        return {"recommendations": recommendations}
+        metrics = self._inventory_metrics()
+        
+        priority_groups = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": []
+        }
+        
+        for metric in metrics:
+            rec = self._generate_recommendation(metric, metrics)
+            if rec:
+                priority_groups[rec["priority"]].append(rec)
+        
+        for priority in ["critical", "high", "medium", "low"]:
+            priority_groups[priority].sort(key=lambda r: -r["confidence"])
+            recommendations.extend(priority_groups[priority][:10 if priority in ["critical", "high"] else 5])
+        
+        return {"recommendations": recommendations[:20]}
+    
+    def _generate_recommendation(self, metric: InventoryMetric, all_metrics: list[InventoryMetric]) -> dict | None:
+        days = float(metric.days_of_coverage)
+        demand_growth = self._calculate_demand_growth(metric)
+        has_transfer_source = any(
+            m.product_id == metric.product_id and m.store_id != metric.store_id and m.overstock 
+            for m in all_metrics
+        )
+        
+        if metric.inventory == 0 and metric.demand > 0:
+            return self._rec(
+                metric, "Expedite Purchase", "critical", 95,
+                "Immediate Replenishment",
+                f"Zero stock with active demand of {int(metric.demand)} units/month",
+                f"Prevents {self._currency(metric.revenue_at_risk)} revenue loss"
+            )
+        
+        if days < 5 and metric.stockout_risk and not has_transfer_source and metric.revenue_at_risk > Decimal("1000"):
+            return self._rec(
+                metric, "Expedite Purchase", "critical", 92,
+                "Critical Reorder",
+                f"Only {days:.1f} days coverage, {self._currency(metric.revenue_at_risk)} at risk",
+                f"Protects {self._currency(metric.revenue_at_risk)} in potential sales"
+            )
+        
+        if 5 <= days < 10 and metric.stockout_risk and demand_growth > 0.2:
+            return self._rec(
+                metric, "Increase Safety Stock", "high", 88,
+                "Adjust Safety Stock",
+                f"Demand increased {demand_growth*100:.0f}%, only {days:.1f} days coverage",
+                f"Prevents future stockouts worth {self._currency(metric.revenue_at_risk)}"
+            )
+        
+        if has_transfer_source and days < 7 and metric.revenue_at_risk > Decimal("5000"):
+            return self._rec(
+                metric, "Regional Transfer", "high", 90,
+                "Transfer Inventory",
+                f"Critical shortage, overstock available elsewhere",
+                f"Immediate fulfillment of {self._currency(metric.revenue_at_risk)} demand"
+            )
+        
+        if metric.demand_spike and 10 < days < 30:
+            return self._rec(
+                metric, "Investigate Demand Spike", "medium", 75,
+                "Monitor Demand",
+                f"Unusual demand pattern detected, verify before restocking",
+                "Early verification prevents overstock if spike is temporary"
+            )
+        
+        if days > 180 and metric.inventory_value > Decimal("10000"):
+            return self._rec(
+                metric, "Return Excess Stock", "high", 85,
+                "Vendor Return",
+                f"Extreme overstock: {days:.0f} days ({self._currency(metric.inventory_value)})",
+                f"Recovers {self._currency(metric.inventory_value * Decimal('0.8'))} via vendor credit"
+            )
+        
+        if 120 < days <= 180 and metric.category in ["Accessories", "Body Parts", "Electrical", "Filters"]:
+            return self._rec(
+                metric, "Bundle Promotion", "medium", 78,
+                "Create Bundle Offer",
+                f"Overstock ({days:.0f} days) in promotional category",
+                f"Accelerates turnover, saves {self._currency(metric.holding_cost * Decimal('90'))} holding costs"
+            )
+        
+        if 90 < days <= 120 and metric.inventory_value > Decimal("5000"):
+            return self._rec(
+                metric, "Clear Aging Inventory", "medium", 80,
+                "Markdown Campaign",
+                f"{days:.0f} days coverage, high inventory value",
+                f"Frees {self._currency(metric.inventory_value * Decimal('0.3'))} working capital"
+            )
+        
+        if metric.overstock and 60 < days <= 90:
+            return self._rec(
+                metric, "Reduce Overstock", "medium", 82,
+                "Discount or Transfer",
+                f"Moderate overstock at {days:.0f} days coverage",
+                f"Saves {self._currency(metric.holding_cost * Decimal('60'))} in holding costs"
+            )
+        
+        imbalance_target = self._find_rebalance_opportunity(metric, all_metrics)
+        if imbalance_target and 14 < days < 45:
+            return self._rec(
+                metric, "Rebalance Inventory", "low", 70,
+                "Optimize Distribution",
+                f"Transfer {imbalance_target['units']} units to {imbalance_target['target_store']}",
+                f"Prevents {self._currency(imbalance_target['revenue_protected'])} stockout elsewhere"
+            )
+        
+        if 14 <= days <= 45 and metric.turnover > Decimal("0.8") and not metric.stockout_risk and not metric.overstock:
+            return self._rec(
+                metric, "Monitor Demand Trend", "low", 65,
+                "Hold Current Level",
+                f"Healthy inventory: {days:.1f} days coverage, {float(metric.turnover):.2f}x turnover",
+                "No action required, continue monitoring"
+            )
+        
+        return None
+    
+    def _rec(self, metric: InventoryMetric, rec_type: str, priority: str, confidence: int, 
+             action: str, reason: str, impact: str) -> dict:
+        return {
+            "id": f"{rec_type.lower().replace(' ', '-')}-{metric.store_id}-{metric.product_id}",
+            "title": f"{rec_type}: {metric.product}",
+            "reason": f"{metric.store}: {reason}",
+            "impact": impact,
+            "priority": priority,
+            "confidence": confidence,
+            "estimatedSavings": self._currency(max(metric.revenue_at_risk, metric.holding_cost * Decimal("30"))),
+            "primaryAction": action,
+        }
+    
+    def _calculate_demand_growth(self, metric: InventoryMetric) -> float:
+        sales_30 = self._sales_totals(self.last_30_days, self.today).get((metric.product_id, metric.store_id), 0)
+        sales_prev = self._sales_totals(self.previous_30_days, self.last_30_days - timedelta(days=1)).get((metric.product_id, metric.store_id), 0)
+        if sales_prev == 0:
+            return 0.0
+        return (sales_30 - sales_prev) / sales_prev
+    
+    def _find_rebalance_opportunity(self, metric: InventoryMetric, all_metrics: list[InventoryMetric]) -> dict | None:
+        if metric.days_of_coverage < 14 or metric.overstock:
+            return None
+        
+        for target in all_metrics:
+            if (target.product_id == metric.product_id and 
+                target.store_id != metric.store_id and 
+                target.days_of_coverage < 7 and
+                target.stockout_risk):
+                
+                transfer_qty = min(
+                    int(metric.inventory * 0.3),
+                    max(1, int(target.demand * LEAD_TIME_FACTOR) - target.inventory)
+                )
+                
+                if transfer_qty > 0:
+                    return {
+                        "units": transfer_qty,
+                        "target_store": target.store,
+                        "revenue_protected": target.revenue_at_risk
+                    }
+        
+        return None
 
     def reports(self) -> dict:
         overview = self.overview()
@@ -278,18 +430,6 @@ class AnalyticsService:
             "health": metric.health,
             "revenueAtRisk": float(metric.revenue_at_risk),
             "status": metric.status,
-        }
-
-    def _recommendation(self, metric: InventoryMetric, title: str, priority: str, action: str) -> dict:
-        return {
-            "id": f"{title.lower().replace(' ', '-')}-{metric.store_id}-{metric.product_id}",
-            "title": f"{title}: {metric.product}",
-            "reason": f"{metric.store} has {metric.inventory} units against 30-day demand of {int(metric.demand)}.",
-            "impact": f"Revenue at risk: {self._currency(metric.revenue_at_risk)}. Days of coverage: {float(metric.days_of_coverage):.1f}.",
-            "priority": priority,
-            "confidence": 100,
-            "estimatedSavings": self._currency(metric.revenue_at_risk),
-            "primaryAction": action,
         }
 
     def _transfer_suggestion(self, metric: InventoryMetric) -> dict | None:

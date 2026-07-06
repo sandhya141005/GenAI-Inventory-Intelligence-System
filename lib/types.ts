@@ -77,3 +77,23 @@ export interface NoticeItem {
   detail: string;
   timestamp: string;
 }
+
+export interface CopilotResponse {
+  intent: string;
+  response: string;
+  conversation_id?: number;
+  metadata: Record<string, any>;
+  confidence: "low" | "medium" | "high";
+}
+
+export interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  is_active: boolean;
+}
+
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+}

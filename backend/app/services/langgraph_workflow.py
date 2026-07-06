@@ -93,21 +93,58 @@ def call_llm(state: CopilotState) -> CopilotState:
             for msg in history[-6:]:
                 history_text += f"{msg['role']}: {msg['content'][:200]}\n"
         
+        # Simplify business context to avoid token limits
+        context = state['business_context']
+        simplified_context = {}
+        
+        # Only include non-dict values and summaries
+        for key, value in context.items():
+            if key in ['as_of', 'intent', 'user_id', 'source', 'query', 'analytics_used', 'error', 'partial_failure']:
+                simplified_context[key] = value
+            elif isinstance(value, dict):
+                # For overview, extract just summary
+                if key == 'overview' and 'summary' in value:
+                    simplified_context[key] = {
+                        'summary': value['summary'],
+                        'kpi_count': len(value.get('kpis', [])),
+                        'recommendation_count': len(value.get('recommendations', []))
+                    }
+                # For other dicts, just count items
+                elif isinstance(value, dict):
+                    simplified_context[f"{key}_available"] = True
+                    if 'items' in value:
+                        simplified_context[f"{key}_count"] = len(value['items'])
+                    elif key.endswith('s'):  # plural keys like 'recommendations', 'transfers'
+                        # Try to get the list
+                        for subkey, subvalue in value.items():
+                            if isinstance(subvalue, list):
+                                simplified_context[f"{key}_count"] = len(subvalue)
+                                break
+        
         user_prompt = (
             f"User request:\n{state['user_input']}\n\n"
             f"{history_text}\n"
-            f"Business context:\n{state['business_context']}\n\n"
-            f"Additional metadata:\n{state.get('metadata', {})}"
+            f"Context summary: {simplified_context}\n\n"
+            f"Full data available: {', '.join(state['business_context'].get('analytics_used', []))}\n"
+            f"Respond based on the available analytics data. If you need specific details, "
+            f"acknowledge what data is available and provide insights based on that."
         )
         
         state["llm_response"] = LLMClient().generate(prompt, user_prompt)
         state["confidence"] = extract_confidence(state["llm_response"])
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"LLM Error: {error_detail}")
+        
         state["error"] = f"LLM generation failed: {str(e)}"
         state["llm_response"] = (
             "I encountered an issue generating the response. "
-            "The analytics data is available, but I couldn't process it. "
-            "Please try rephrasing your question."
+            f"Error: {str(e)[:100]}\n\n"
+            "Try asking a more specific question like:\n"
+            "- 'Show me revenue at risk'\n"
+            "- 'List products with low stock'\n"
+            "- 'What products need reordering?'"
         )
         state["confidence"] = "low"
     

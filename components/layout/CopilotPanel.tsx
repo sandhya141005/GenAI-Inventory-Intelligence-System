@@ -2,75 +2,46 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Send, Sparkles } from "lucide-react";
-import { ChatMessage, KPI, Recommendation } from "@/lib/types";
+import { ChatMessage, CopilotResponse } from "@/lib/types";
 import { ChatMessageBubble, TypingIndicator } from "@/components/copilot/ChatMessage";
 import { SuggestedPrompts } from "@/components/copilot/SuggestedPrompts";
 import { Button } from "@/components/ui/button";
+import { fetchAI } from "@/lib/api";
 
 const suggestedPrompts = [
-  "What products are likely to stock out?",
-  "Show products with highest revenue at risk.",
-  "Recommend inventory transfers.",
-  "Generate today's executive summary.",
-  "Which stores require replenishment?",
-  "Identify slow-moving inventory.",
+  "Which automotive parts are at risk of stocking out in the next 7 days?",
+  "Show me products with the highest revenue at risk across all stores.",
+  "Recommend inventory transfers to balance stock levels.",
+  "Generate an executive summary of current inventory health.",
+  "What are the top 5 overstocked items that need markdown or transfer?",
+  "Analyze brake components inventory and identify issues.",
+  "Which stores have critical low stock on engine oil and filters?",
+  "Show me the aging inventory report for items over 60 days old.",
 ];
-
-interface OverviewResponse {
-  summary: {
-    headline: string;
-    detail: string;
-  };
-  kpis: KPI[];
-  recommendations: Recommendation[];
-}
 
 function timestamp() {
   return new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 }
 
-async function buildAssistantResponse(prompt: string): Promise<ChatMessage> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  const response = await fetch(`${apiUrl}/api/analytics/overview`, { cache: "no-store" });
-
-  if (!response.ok) {
-    throw new Error("Unable to load decision intelligence metrics");
-  }
-
-  const data = (await response.json()) as OverviewResponse;
-  const revenueAtRisk = data.kpis.find((kpi) => kpi.id === "revenue-at-risk");
-  const firstRecommendation = data.recommendations[0];
-
-  return {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    text: `Decision engine result for "${prompt}": ${data.summary.headline}`,
-    timestamp: timestamp(),
-    insight: firstRecommendation
-      ? {
-          title: firstRecommendation.title,
-          metricLabel: revenueAtRisk?.label ?? "Revenue at Risk",
-          metricValue: revenueAtRisk?.value ?? "INR 0",
-          reason: firstRecommendation.reason,
-          recommendation: firstRecommendation.primaryAction,
-          confidence: firstRecommendation.confidence,
-          estimatedSavings: firstRecommendation.estimatedSavings,
-        }
-      : undefined,
-  };
+async function sendChatMessage(message: string, conversationId?: number): Promise<CopilotResponse> {
+  return fetchAI<CopilotResponse>("/api/copilot/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+  });
 }
 
 export function CopilotPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: "initial-live-decision-engine",
+      id: "initial-ai-welcome",
       role: "assistant",
-      text: "Ask a question to query the live decision engine. Responses are calculated from PostgreSQL analytics endpoints.",
+      text: "Welcome to the AI Inventory Copilot for Automotive Parts. I'm powered by OpenAI and have access to your complete inventory data across 10 warehouses and stores.\n\nI can help you:\n• Analyze stockout risks and revenue at risk\n• Recommend optimal inventory transfers\n• Generate executive summaries and reports\n• Query inventory data using natural language\n• Identify overstock and aging inventory\n\nAsk me anything about your automotive parts inventory!",
       timestamp: timestamp(),
     },
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<number | undefined>();
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +51,6 @@ export function CopilotPanel() {
 
   async function handleSend(text: string) {
     const trimmed = text.trim();
-
     if (!trimmed) return;
 
     const userMessage: ChatMessage = {
@@ -95,18 +65,28 @@ export function CopilotPanel() {
     setIsTyping(true);
 
     try {
-      const assistantMessage = await buildAssistantResponse(trimmed);
+      const aiResponse = await sendChatMessage(trimmed, conversationId);
+      
+      if (aiResponse.conversation_id) {
+        setConversationId(aiResponse.conversation_id);
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: aiResponse.response,
+        timestamp: timestamp(),
+      };
+
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: "The decision engine is not reachable right now. Start the FastAPI service and try again.",
-          timestamp: timestamp(),
-        },
-      ]);
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: error instanceof Error ? error.message : "The AI service is temporarily unavailable. Please check that the backend is running and you're authenticated.",
+        timestamp: timestamp(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -120,9 +100,9 @@ export function CopilotPanel() {
             <Sparkles className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Inventory Decision Engine</h1>
+            <h1 className="text-2xl font-bold text-foreground">AI Inventory Copilot</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Query live inventory, stockout, transfer, replenishment, and revenue-risk metrics.
+              Powered by OpenAI + LangGraph. Real-time inventory intelligence from PostgreSQL.
             </p>
           </div>
         </div>
@@ -155,10 +135,11 @@ export function CopilotPanel() {
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask the decision engine..."
-              className="h-14 flex-1 rounded-xl border border-border bg-background px-5 text-sm outline-none transition focus:ring-2 focus:ring-primary/30"
+              placeholder="Ask the AI copilot..."
+              disabled={isTyping}
+              className="h-14 flex-1 rounded-xl border border-border bg-background px-5 text-sm outline-none transition focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
             />
-            <Button type="submit" size="lg" className="h-14 w-14 rounded-xl">
+            <Button type="submit" size="lg" className="h-14 w-14 rounded-xl" disabled={isTyping}>
               <Send className="h-5 w-5" />
             </Button>
           </form>

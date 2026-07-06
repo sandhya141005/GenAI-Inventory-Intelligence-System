@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
+import { AuthProvider } from "@/lib/auth-context";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 export const metadata: Metadata = {
   title: "Inventory Decision Intelligence",
@@ -15,7 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <AuthProvider>
+          <ProtectedRoute>
+            <AppShell>{children}</AppShell>
+          </ProtectedRoute>
+        </AuthProvider>
       </body>
     </html>
   );
