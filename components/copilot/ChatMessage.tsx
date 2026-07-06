@@ -3,6 +3,134 @@ import { ChatMessage as ChatMessageType } from "@/lib/types";
 import { InsightCard } from "./InsightCard";
 import { cn } from "@/lib/utils";
 
+function renderInlineMarkdown(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+
+    return part;
+  });
+}
+
+function normalizeMarkdown(text: string) {
+  return text
+    .replace(/\s+(#{2,6}\s+)/g, "\n$1")
+    .replace(/\s+-\s+(\*\*)/g, "\n- $1")
+    .trim();
+}
+
+function MarkdownMessage({ text }: { text: string }) {
+  const lines = normalizeMarkdown(text).split(/\r?\n/);
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const className =
+        level <= 3
+          ? "mt-3 first:mt-0 text-base font-semibold text-ink"
+          : "mt-2 text-sm font-semibold text-ink";
+
+      blocks.push(
+        <p key={index} className={className}>
+          {renderInlineMarkdown(heading[2].replace(/\s*#+$/, ""))}
+        </p>
+      );
+      index += 1;
+      continue;
+    }
+
+    if (line.startsWith("|") && lines[index + 1]?.trim().match(/^\|?[\s:-]+\|/)) {
+      const tableLines: string[] = [];
+      while (lines[index]?.trim().startsWith("|")) {
+        tableLines.push(lines[index].trim());
+        index += 1;
+      }
+
+      const [headerLine, , ...bodyLines] = tableLines;
+      const headers = headerLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+      const rows = bodyLines.map((row) =>
+        row.split("|").map((cell) => cell.trim()).filter(Boolean)
+      );
+
+      blocks.push(
+        <div key={index} className="my-3 overflow-x-auto">
+          <table className="min-w-full border-collapse text-left text-xs">
+            <thead>
+              <tr>
+                {headers.map((header) => (
+                  <th key={header} className="border border-border bg-gray-50 px-2 py-1 font-semibold">
+                    {renderInlineMarkdown(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} className="border border-border px-2 py-1 align-top">
+                      {renderInlineMarkdown(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    if (line.startsWith("- ")) {
+      const items: string[] = [];
+      while (lines[index]?.trim().startsWith("- ")) {
+        items.push(lines[index].trim().slice(2));
+        index += 1;
+      }
+
+      blocks.push(
+        <ul key={index} className="my-2 list-disc space-y-1 pl-5">
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !lines[index].trim().match(/^(#{1,6})\s+/) &&
+      !lines[index].trim().startsWith("- ") &&
+      !lines[index].trim().startsWith("|")
+    ) {
+      paragraph.push(lines[index].trim());
+      index += 1;
+    }
+
+    blocks.push(
+      <p key={index} className="my-2 first:mt-0 last:mb-0">
+        {renderInlineMarkdown(paragraph.join(" "))}
+      </p>
+    );
+  }
+
+  return <div className="space-y-2 text-left">{blocks}</div>;
+}
+
 export function ChatMessageBubble({ message }: { message: ChatMessageType }) {
   const isAssistant = message.role === "assistant";
 
@@ -35,7 +163,7 @@ export function ChatMessageBubble({ message }: { message: ChatMessageType }) {
               : "bg-primary text-white"
           )}
         >
-          {message.text}
+          {isAssistant ? <MarkdownMessage text={message.text} /> : message.text}
         </div>
 
         {message.insight && (

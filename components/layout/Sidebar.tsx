@@ -49,14 +49,12 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex w-[220px] shrink-0 flex-col border-r border-border bg-surface">
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-border">
-        <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center">
-          <Sparkles className="h-4 w-4 text-white" />
-        </div>
+      <Link href="/" className="flex items-center gap-2 px-5 h-16 border-b border-border">
+        <img src="/stocklens-icon.png" alt="StockLens" className="h-7 w-7 rounded-md object-cover" />
         <span className="text-sm font-semibold text-ink tracking-tight">
-          Inventory IQ
+          StockLens
         </span>
-      </div>
+      </Link>
 
       <div className="flex-1 overflow-y-auto">
         <nav className="px-3 py-4 space-y-0.5">
