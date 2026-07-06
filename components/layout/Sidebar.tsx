@@ -58,58 +58,62 @@ export function Sidebar() {
         </span>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems
-          .filter((item) => !item.hideIfHome)
-          .map((item) => {
-            const active = pathname === item.href;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-primary/8 text-primary font-medium"
-                    : "text-ink-muted hover:bg-gray-50 hover:text-ink"
-                )}
-              >
-                <Icon
+      <div className="flex-1 overflow-y-auto">
+        <nav className="px-3 py-4 space-y-0.5">
+          {navItems
+            .filter((item) => !item.hideIfHome)
+            .map((item) => {
+              const active = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
                   className={cn(
-                    "h-4 w-4",
-                    active ? "text-primary" : "text-ink-muted"
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                    active
+                      ? "bg-primary/8 text-primary font-medium"
+                      : "text-ink-muted hover:bg-gray-50 hover:text-ink"
                   )}
-                  strokeWidth={1.8}
-                />
-                {item.label}
-              </Link>
-            );
-          })}
+                >
+                  <Icon
+                    className={cn(
+                      "h-4 w-4",
+                      active ? "text-primary" : "text-ink-muted"
+                    )}
+                    strokeWidth={1.8}
+                  />
+                  {item.label}
+                </Link>
+              );
+            })}
+        </nav>
 
-        <div className="pt-3 mt-3 border-t border-border">
-          <p className="px-3 pb-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">
-            AI Reports
-          </p>
-          {aiReportItems.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors pl-10",
-                  active
-                    ? "bg-primary/8 text-primary font-medium"
-                    : "text-ink-muted hover:bg-gray-50 hover:text-ink"
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <div className="px-3 pb-4">
+          <div className="pt-3 mt-3 border-t border-border">
+            <p className="px-3 pb-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">
+              AI Reports
+            </p>
+            {aiReportItems.map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors pl-10",
+                    active
+                      ? "bg-primary/8 text-primary font-medium"
+                      : "text-ink-muted hover:bg-gray-50 hover:text-ink"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
-      </nav>
+      </div>
 
       <div className="p-3 border-t border-border space-y-2">
         <div className="flex items-center gap-2 rounded-md px-3 py-2 bg-gray-50">
