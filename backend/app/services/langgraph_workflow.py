@@ -1,7 +1,9 @@
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.services.business_context import fetch_business_context
 from app.services.llm_client import LLMClient
 from app.services.prompt_service import load_prompt
@@ -17,6 +19,10 @@ class CopilotState(TypedDict, total=False):
     metadata: dict[str, Any]
     llm_response: str
     response: str
+    confidence: str
+    analytics_used: list[str]
+    error: str | None
+    db: Session | None
 
 
 def classify_intent(state: CopilotState) -> CopilotState:
@@ -26,52 +32,114 @@ def classify_intent(state: CopilotState) -> CopilotState:
         return state
 
     text = state["user_input"].lower()
-    if "root cause" in text or "why" in text:
+    
+    if "root cause" in text or ("why" in text and ("decrease" in text or "increase" in text or "drop" in text)):
         intent = "root_cause_analysis"
-    elif "recommend" in text or "action" in text:
+    elif "recommend" in text or "action" in text or "should i" in text or "what to do" in text:
         intent = "recommendations"
-    elif "sql" in text or "query" in text:
+    elif "sql" in text or "query" in text or "database" in text:
         intent = "nl_query"
-    elif "weekly" in text:
+    elif "weekly" in text and ("report" in text or "summary" in text):
         intent = "weekly_report"
-    elif "morning" in text or "brief" in text:
+    elif ("morning" in text or "brief" in text or "today" in text) and ("summary" in text or "brief" in text):
         intent = "morning_brief"
-    else:
+    elif "executive" in text or "summary" in text or "overview" in text:
         intent = "executive_summary"
+    else:
+        intent = "inventory_agent"
+    
     state["intent"] = intent
     return state
 
 
 def add_business_context(state: CopilotState) -> CopilotState:
-    state["business_context"] = fetch_business_context(
-        intent=state["intent"],
-        user_input=state["user_input"],
-        user_id=state["user_id"],
-    )
+    try:
+        db = state.get("db") or next(get_db())
+        state["business_context"] = fetch_business_context(
+            intent=state["intent"],
+            user_input=state["user_input"],
+            user_id=state["user_id"],
+            db=db,
+        )
+        state["analytics_used"] = state["business_context"].get("analytics_used", [])
+    except Exception as e:
+        state["error"] = f"Failed to fetch business context: {str(e)}"
+        state["business_context"] = {
+            "error": str(e),
+            "partial_failure": True,
+            "as_of": "",
+            "intent": state["intent"],
+        }
+        state["analytics_used"] = []
     return state
 
 
 def call_llm(state: CopilotState) -> CopilotState:
-    prompt = load_prompt(state["intent"])
-    history = state.get("conversation_history", [])
-    user_prompt = (
-        f"User request:\n{state['user_input']}\n\n"
-        f"Conversation history:\n{history}\n\n"
-        f"Business context:\n{state['business_context']}\n\n"
-        f"Metadata:\n{state.get('metadata', {})}"
-    )
-    state["llm_response"] = LLMClient().generate(prompt, user_prompt)
+    if state.get("error"):
+        state["llm_response"] = (
+            "I encountered an issue accessing the inventory analytics. "
+            "Please try again or contact support if the problem persists."
+        )
+        state["confidence"] = "low"
+        return state
+    
+    try:
+        prompt = load_prompt(state["intent"])
+        history = state.get("conversation_history", [])
+        
+        history_text = ""
+        if history:
+            history_text = "Previous conversation:\n"
+            for msg in history[-6:]:
+                history_text += f"{msg['role']}: {msg['content'][:200]}\n"
+        
+        user_prompt = (
+            f"User request:\n{state['user_input']}\n\n"
+            f"{history_text}\n"
+            f"Business context:\n{state['business_context']}\n\n"
+            f"Additional metadata:\n{state.get('metadata', {})}"
+        )
+        
+        state["llm_response"] = LLMClient().generate(prompt, user_prompt)
+        state["confidence"] = extract_confidence(state["llm_response"])
+    except Exception as e:
+        state["error"] = f"LLM generation failed: {str(e)}"
+        state["llm_response"] = (
+            "I encountered an issue generating the response. "
+            "The analytics data is available, but I couldn't process it. "
+            "Please try rephrasing your question."
+        )
+        state["confidence"] = "low"
+    
     return state
 
 
 def format_response(state: CopilotState) -> CopilotState:
-    state["response"] = state["llm_response"].strip()
+    response = state["llm_response"].strip()
+    
+    analytics_used = state.get("analytics_used", [])
+    if analytics_used and "Based on:" not in response:
+        analytics_formatted = ", ".join([a.replace("_", " ").title() for a in analytics_used])
+        response += f"\n\n**Based on:** {analytics_formatted}"
+    
+    state["response"] = response
     state["metadata"] = {
         **state.get("metadata", {}),
+        "confidence": state.get("confidence", "medium"),
+        "analytics_used": analytics_used,
+        "error": state.get("error"),
         "business_context_source": state["business_context"].get("source"),
-        "member3_handoff": state["business_context"].get("member3_handoff"),
     }
     return state
+
+
+def extract_confidence(response: str) -> str:
+    response_lower = response.lower()
+    if "confidence: high" in response_lower or "confidence:** high" in response_lower:
+        return "high"
+    if "confidence: low" in response_lower or "confidence:** low" in response_lower:
+        return "low"
+    return "medium"
 
 
 def build_graph():
@@ -97,6 +165,7 @@ def run_copilot_workflow(
     user_id: int,
     conversation_history: list[dict[str, str]] | None = None,
     metadata: dict[str, Any] | None = None,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     state = copilot_graph.invoke(
         {
@@ -105,6 +174,12 @@ def run_copilot_workflow(
             "user_id": user_id,
             "conversation_history": conversation_history or [],
             "metadata": metadata or {},
+            "db": db,
         }
     )
-    return {"intent": state["intent"], "response": state["response"], "metadata": state.get("metadata", {})}
+    return {
+        "intent": state["intent"],
+        "response": state["response"],
+        "metadata": state.get("metadata", {}),
+        "confidence": state.get("confidence", "medium"),
+    }

@@ -14,7 +14,8 @@ def load_prompt(intent: str) -> str:
         "root_cause_analysis": "root_cause_analysis.md",
         "recommendations": "recommendations.md",
         "nl_query": "nl_to_sql.md",
-        "chat": "executive_summary.md",
+        "chat": "inventory_agent.md",
+        "inventory_agent": "inventory_agent.md",
     }
-    filename = prompt_map.get(intent, "executive_summary.md")
+    filename = prompt_map.get(intent, "inventory_agent.md")
     return (PROMPT_DIR / filename).read_text(encoding="utf-8")

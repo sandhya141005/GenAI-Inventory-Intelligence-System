@@ -22,3 +22,4 @@ class CopilotResponse(BaseModel):
     response: str
     conversation_id: int | None = None
     metadata: dict = Field(default_factory=dict)
+    confidence: str = Field(default="medium")
