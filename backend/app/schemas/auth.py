@@ -30,7 +30,8 @@ class RefreshTokenRequest(BaseModel):
 
 class UserRead(BaseModel):
     id: int
-    email: EmailStr
+    # Allow local-domain demo accounts (e.g. *@stocklens.local) in API responses.
+    email: str
     full_name: str | None
     is_active: bool
     realm_id: int | None = None
