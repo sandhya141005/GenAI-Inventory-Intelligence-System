@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { RecommendationCard } from "@/components/dashboard/RecommendationCard";
@@ -16,9 +19,24 @@ interface OverviewResponse {
   actionSuggestions: InventoryActionSuggestion[];
 }
 
-export default async function OverviewPage() {
-  const { summary, kpis, recommendations, actionSuggestions } =
-    await fetchAnalytics<OverviewResponse>("/api/analytics/overview");
+export default function OverviewPage() {
+  const [overview, setOverview] = useState<OverviewResponse | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAnalytics<OverviewResponse>("/api/analytics/overview")
+      .then(setOverview)
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load overview"));
+  }, []);
+
+  const summary = overview?.summary ?? {
+    generatedAt: "",
+    headline: "Loading inventory overview...",
+    detail: "StockLens is preparing your scoped dashboard.",
+  };
+  const kpis = overview?.kpis ?? [];
+  const recommendations = overview?.recommendations ?? [];
+  const actionSuggestions = overview?.actionSuggestions ?? [];
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
@@ -34,6 +52,7 @@ export default async function OverviewPage() {
           {summary.detail}
         </p>
       </section>
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       <SuggestedActionsSection suggestions={actionSuggestions} />
 

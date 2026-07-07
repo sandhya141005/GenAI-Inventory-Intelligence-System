@@ -14,6 +14,7 @@ import {
   Bell,
   HandHeart,
   Settings,
+  Shield,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ export function Sidebar() {
         <nav className="px-3 py-4 space-y-0.5">
           {navItems
             .filter((item) => !item.hideIfHome)
+            .filter((item) => item.href !== "/settings" || user?.role === "WAREHOUSE_OWNER")
             .map((item) => {
               const active = pathname === item.href;
               const Icon = item.icon;
@@ -87,6 +89,20 @@ export function Sidebar() {
                 </Link>
               );
             })}
+          {user?.role === "WAREHOUSE_OWNER" && (
+            <Link
+              href="/team"
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                pathname === "/team"
+                  ? "bg-primary/8 text-primary font-medium"
+                  : "text-ink-muted hover:bg-gray-50 hover:text-ink"
+              )}
+            >
+              <Shield className={cn("h-4 w-4", pathname === "/team" ? "text-primary" : "text-ink-muted")} strokeWidth={1.8} />
+              Team
+            </Link>
+          )}
         </nav>
 
         <div className="px-3 pb-4">
@@ -116,9 +132,17 @@ export function Sidebar() {
       </div>
 
       <div className="p-3 border-t border-border space-y-2">
+        <div className="rounded-md border border-border bg-background px-3 py-2 text-xs leading-5">
+          <p className="font-medium text-ink">
+            {user?.role === "STORE_MANAGER"
+              ? `Viewing: ${user.assigned_store_name ?? "Unassigned"}`
+              : "Viewing: All Stores"}
+          </p>
+          <p className="truncate text-ink-muted">{user?.realm_name ?? "No realm"}</p>
+        </div>
         <div className="flex items-center gap-2 rounded-md px-3 py-2 bg-gray-50">
           <div className="h-7 w-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-semibold text-primary">
-            {user?.full_name.charAt(0).toUpperCase() || "U"}
+            {user?.full_name?.charAt(0).toUpperCase() || "U"}
           </div>
           <div className="text-xs leading-tight flex-1 min-w-0">
             <p className="font-medium text-ink truncate">{user?.full_name || "User"}</p>

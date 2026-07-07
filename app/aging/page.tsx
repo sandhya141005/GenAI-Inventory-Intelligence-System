@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { fetchAnalytics } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -21,8 +24,15 @@ const bandVariant: Record<string, "danger" | "warning" | "accent" | "neutral"> =
   "0-30 days": "neutral",
 };
 
-export default async function AgingPage() {
-  const { items } = await fetchAnalytics<AgingResponse>("/api/analytics/inventory-aging");
+export default function AgingPage() {
+  const [items, setItems] = useState<AgingItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAnalytics<AgingResponse>("/api/analytics/inventory-aging")
+      .then((data) => setItems(data.items ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load inventory aging"));
+  }, []);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-4">
@@ -32,6 +42,7 @@ export default async function AgingPage() {
           Stock tying up working capital, ranked by age.
         </p>
       </div>
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       <div className="rounded-lg border border-border bg-surface shadow-soft divide-y divide-border">
         {items.map((item) => (

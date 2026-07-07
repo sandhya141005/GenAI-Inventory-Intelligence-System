@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import analytics, auth, copilot, donations, health
+from app.api.routers import analytics, auth, copilot, donations, health, realm
 from app.core.config import settings
 
 
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     app.include_router(copilot.router, prefix=settings.API_PREFIX)
     app.include_router(analytics.router, prefix=settings.API_PREFIX)
     app.include_router(donations.router, prefix=settings.API_PREFIX)
+    app.include_router(realm.router, prefix=settings.API_PREFIX)
     return app
 
 

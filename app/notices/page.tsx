@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, CheckCircle2, Lightbulb, PackageX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fetchAnalytics } from "@/lib/api";
@@ -23,8 +26,15 @@ interface NoticesResponse {
   notices: NoticeItem[];
 }
 
-export default async function NoticesPage() {
-  const { notices } = await fetchAnalytics<NoticesResponse>("/api/analytics/notices");
+export default function NoticesPage() {
+  const [notices, setNotices] = useState<NoticeItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAnalytics<NoticesResponse>("/api/analytics/notices")
+      .then((data) => setNotices(data.notices ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load notices"));
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
@@ -34,6 +44,7 @@ export default async function NoticesPage() {
           Alerts, recommendations, and updates across the network.
         </p>
       </div>
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       <div className="space-y-2">
         {notices.map((notice) => {

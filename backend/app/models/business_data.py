@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Integer, Numeric, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -11,6 +11,7 @@ class InventorySnapshot(Base):
     __tablename__ = "inventory_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     snapshot_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     sku: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     product_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -27,6 +28,7 @@ class RevenueRecord(Base):
     __tablename__ = "revenue_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     sale_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     sku: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
@@ -41,6 +43,7 @@ class StockoutEvent(Base):
     __tablename__ = "stockout_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     event_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     sku: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     store_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)

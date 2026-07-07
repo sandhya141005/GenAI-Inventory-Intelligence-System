@@ -67,8 +67,9 @@ class InventoryActionInput:
 
 
 class SmartInventoryActionEngine:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, scope=None) -> None:
         self.db = db
+        self.scope = scope
         self.today = date.today()
 
     def suggestions(self) -> list[dict]:
@@ -106,6 +107,7 @@ class SmartInventoryActionEngine:
         stock_rows = self.db.execute(
             select(Product, WarehouseStock.quantity)
             .join(WarehouseStock, WarehouseStock.product_id == Product.id)
+            .where(*self._realm_filters(Product, WarehouseStock))
             .order_by(Product.name)
         ).all()
         last_sale_by_product = self._last_sale_dates()
@@ -208,6 +210,7 @@ class SmartInventoryActionEngine:
         rows = self.db.execute(
             select(Sale.product_id, func.max(Sale.sale_date))
             .where(Sale.product_id.is_not(None))
+            .where(*self._sale_filters())
             .group_by(Sale.product_id)
         ).all()
         return {int(product_id): last_sale for product_id, last_sale in rows if last_sale is not None}
@@ -217,6 +220,7 @@ class SmartInventoryActionEngine:
             select(Sale.product_id, Store.city, Sale.sale_date)
             .join(Store, Store.id == Sale.store_id)
             .where(Sale.product_id.is_not(None), Store.city.is_not(None))
+            .where(*self._sale_filters(), *self._store_filters(Store))
             .order_by(Sale.product_id, Sale.sale_date.desc())
         ).all()
         cities: dict[int, str] = {}
@@ -228,6 +232,24 @@ class SmartInventoryActionEngine:
         return self.db.execute(
             select(Store.city)
             .where(Store.store_type == "hub", Store.city.is_not(None))
+            .where(*self._store_filters(Store))
             .order_by(Store.id)
             .limit(1)
         ).scalar_one_or_none()
+
+    def _realm_filters(self, *models) -> list:
+        if self.scope is None:
+            return []
+        return [model.realm_id == self.scope.realm_id for model in models]
+
+    def _sale_filters(self) -> list:
+        filters = self._realm_filters(Sale)
+        if self.scope is not None and getattr(self.scope, "is_store_manager", False):
+            filters.append(Sale.store_id == self.scope.assigned_store_id)
+        return filters
+
+    def _store_filters(self, model) -> list:
+        filters = self._realm_filters(model)
+        if self.scope is not None and getattr(self.scope, "is_store_manager", False):
+            filters.append(model.id == self.scope.assigned_store_id)
+        return filters

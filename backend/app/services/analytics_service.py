@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from math import floor
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.analytics_data import Product, Sale, Store, Transfer, WarehouseStock
@@ -44,8 +44,9 @@ class InventoryMetric:
 
 
 class AnalyticsService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, scope=None) -> None:
         self.db = db
+        self.scope = scope
         self.today = date.today()
         self.last_30_days = self.today - timedelta(days=30)
         self.previous_30_days = self.today - timedelta(days=60)
@@ -75,7 +76,7 @@ class AnalyticsService:
                 self._kpi("inventory-turnover", "Inventory Turnover", turnover, "good", suffix="x"),
             ],
             "recommendations": self.recommendations()["recommendations"][:4],
-            "actionSuggestions": SmartInventoryActionEngine(self.db).suggestions()[:12],
+            "actionSuggestions": SmartInventoryActionEngine(self.db, self.scope).suggestions()[:12],
         }
 
     def inventory(self) -> dict:
@@ -301,7 +302,9 @@ class AnalyticsService:
 
     def charts(self) -> dict:
         revenue_rows = self.db.execute(
-            select(Sale.sale_date, func.coalesce(func.sum(Sale.revenue), 0))
+            self._sale_scope_filter(
+                select(Sale.sale_date, func.coalesce(func.sum(Sale.revenue), 0))
+            )
             .where(Sale.sale_date >= self.today - timedelta(days=6))
             .group_by(Sale.sale_date)
             .order_by(Sale.sale_date)
@@ -330,16 +333,27 @@ class AnalyticsService:
             raise ValueError("Quantity must be positive")
 
         stock = self.db.execute(
-            select(WarehouseStock).where(WarehouseStock.product_id == product_id)
+            self._realm_filter(select(WarehouseStock).where(WarehouseStock.product_id == product_id), WarehouseStock)
         ).scalar_one_or_none()
 
         current_qty = int(stock.quantity) if stock else 0
         if current_qty < quantity:
             raise InsufficientStockError(f"Only {current_qty} units available for product {product_id}")
 
+        if self.scope is not None:
+            if getattr(self.scope, "is_store_manager", False):
+                allowed_store = getattr(self.scope, "assigned_store_id", None)
+                if allowed_store not in {from_store_id, to_store_id}:
+                    raise PermissionError("Store managers can only transfer inventory involving their assigned store")
+            for store_id in {from_store_id, to_store_id}:
+                db_store = self.db.get(Store, store_id)
+                if not db_store or db_store.realm_id != self.scope.realm_id:
+                    raise PermissionError("Transfer store is outside this realm")
+
         stock.quantity = current_qty - quantity
 
         transfer = Transfer(
+            realm_id=getattr(self.scope, "realm_id", None),
             from_store_id=from_store_id,
             to_store_id=to_store_id,
             product_id=product_id,
@@ -379,6 +393,7 @@ class AnalyticsService:
             .join(Product, Product.id == Transfer.product_id)
             .join(from_store_alias, from_store_alias.id == Transfer.from_store_id)
             .join(to_store_alias, to_store_alias.id == Transfer.to_store_id)
+            .where(*self._transfer_filters(Transfer))
             .order_by(Transfer.transfer_date.desc().nullslast(), Transfer.id.desc())
         ).all()
         existing = [
@@ -436,21 +451,27 @@ class AnalyticsService:
         products = {
             product.id: product
             for product in self.db.execute(select(Product)).scalars()
+            if self._in_realm(product)
         }
         stores = {
             store.id: store
             for store in self.db.execute(select(Store)).scalars()
+            if self._in_realm(store) and self._store_allowed(store.id)
         }
         stock_by_product = {
             stock.product_id: int(stock.quantity or 0)
-            for stock in self.db.execute(select(WarehouseStock)).scalars()
+            for stock in self.db.execute(self._realm_filter(select(WarehouseStock), WarehouseStock)).scalars()
         }
         sales_30 = self._sales_totals(self.last_30_days, self.today)
         sales_prev = self._sales_totals(self.previous_30_days, self.last_30_days - timedelta(days=1))
 
         keys = set(sales_30) | set(sales_prev)
         for product_id in stock_by_product:
-            if product_id in products and not any(key[0] == product_id for key in keys):
+            if (
+                product_id in products
+                and not any(key[0] == product_id for key in keys)
+                and not (self.scope is not None and getattr(self.scope, "is_store_manager", False))
+            ):
                 keys.add((product_id, 0))
 
         metrics: list[InventoryMetric] = []
@@ -459,6 +480,10 @@ class AnalyticsService:
             if product is None:
                 continue
             store = stores.get(store_id)
+            if self.scope is not None and getattr(self.scope, "is_store_manager", False) and not store_id:
+                continue
+            if store_id and not self._store_allowed(store_id):
+                continue
             inventory = stock_by_product.get(product_id, 0)
             demand = Decimal(sales_30.get((product_id, store_id), 0))
             previous_demand = Decimal(sales_prev.get((product_id, store_id), 0))
@@ -504,7 +529,7 @@ class AnalyticsService:
 
     def _sales_totals(self, start: date, end: date) -> dict[tuple[int, int], int]:
         rows = self.db.execute(
-            select(Sale.product_id, Sale.store_id, func.coalesce(func.sum(Sale.quantity), 0))
+            self._sale_scope_filter(select(Sale.product_id, Sale.store_id, func.coalesce(func.sum(Sale.quantity), 0)))
             .where(Sale.sale_date >= start, Sale.sale_date <= end, Sale.product_id.is_not(None), Sale.store_id.is_not(None))
             .group_by(Sale.product_id, Sale.store_id)
         ).all()
@@ -598,3 +623,32 @@ class AnalyticsService:
 
     def _currency(self, value: Decimal) -> str:
         return f"INR {float(value):,.0f}"
+
+    def _in_realm(self, row) -> bool:
+        return self.scope is None or getattr(row, "realm_id", None) == self.scope.realm_id
+
+    def _store_allowed(self, store_id: int | None) -> bool:
+        if self.scope is None or store_id is None:
+            return True
+        if getattr(self.scope, "is_store_manager", False):
+            return store_id == getattr(self.scope, "assigned_store_id", None)
+        return True
+
+    def _realm_filter(self, statement, model):
+        if self.scope is None:
+            return statement
+        return statement.where(model.realm_id == self.scope.realm_id)
+
+    def _sale_scope_filter(self, statement):
+        statement = self._realm_filter(statement, Sale)
+        if self.scope is not None and getattr(self.scope, "is_store_manager", False):
+            statement = statement.where(Sale.store_id == self.scope.assigned_store_id)
+        return statement
+
+    def _transfer_filters(self, model) -> list:
+        filters = []
+        if self.scope is not None:
+            filters.append(model.realm_id == self.scope.realm_id)
+            if getattr(self.scope, "is_store_manager", False):
+                filters.append(or_(model.from_store_id == self.scope.assigned_store_id, model.to_store_id == self.scope.assigned_store_id))
+        return filters

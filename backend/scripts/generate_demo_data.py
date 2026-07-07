@@ -14,7 +14,7 @@ import random
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.analytics_data import Product, Store, WarehouseStock, Sale, Transfer
-from app.models.user import User
+from app.models.user import Realm, STORE_MANAGER, WAREHOUSE_OWNER, User
 from app.core.security import hash_password
 
 
@@ -145,26 +145,64 @@ def generate_realistic_demand_profile(category: str, season_factor: float = 1.0)
     return profile
 
 
-def create_demo_user(db: Session) -> int:
-    """Create demo user if not exists"""
+def create_demo_user(db: Session) -> tuple[int, int]:
+    """Create demo owner and realm if not exists."""
     demo_email = "demo@mckinsey.com"
     user = db.query(User).filter(User.email == demo_email).first()
-    
+
     if not user:
         user = User(
             email=demo_email,
             full_name="McKinsey Demo User",
             hashed_password=hash_password("demo1234"),
-            is_active=True
+            is_active=True,
+            role=WAREHOUSE_OWNER,
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
-        print(f"✅ Created demo user: {demo_email} / demo1234")
+        db.flush()
+        print(f"Created demo owner: {demo_email} / demo1234")
     else:
-        print(f"✅ Demo user already exists: {demo_email}")
-    
-    return user.id
+        print(f"Demo owner already exists: {demo_email}")
+
+    realm = db.query(Realm).filter(Realm.join_code == "8341").first()
+    if not realm:
+        realm = Realm(
+            name="StockLens Automotive Demo",
+            industry_tag="Automotive Parts",
+            join_code="8341",
+            owner_user_id=user.id,
+        )
+        db.add(realm)
+        db.flush()
+
+    user.realm_id = realm.id
+    user.role = WAREHOUSE_OWNER
+    db.commit()
+    db.refresh(user)
+
+    return user.id, realm.id
+
+
+def create_demo_managers(db: Session, realm_id: int, store_objects: list[Store]) -> None:
+    manager_specs = [
+        ("chennai.manager@stocklens.local", "Chennai Store Manager", store_objects[5].id),
+        ("mumbai.manager@stocklens.local", "Mumbai Store Manager", store_objects[1].id),
+        ("unassigned.manager@stocklens.local", "Unassigned Store Manager", None),
+    ]
+    for email, full_name, store_id in manager_specs:
+        manager = db.query(User).filter(User.email == email).first()
+        if not manager:
+            manager = User(
+                email=email,
+                full_name=full_name,
+                hashed_password=hash_password("demo1234"),
+                is_active=True,
+            )
+            db.add(manager)
+        manager.realm_id = realm_id
+        manager.role = STORE_MANAGER
+        manager.assigned_store_id = store_id
+    db.commit()
 
 
 def generate_demo_data():
@@ -184,14 +222,15 @@ def generate_demo_data():
         db.query(Store).delete()
         db.commit()
         
-        # Create demo user
-        create_demo_user(db)
+        # Create demo owner and realm
+        _, realm_id = create_demo_user(db)
         
         # Create stores (matching Store model: name, city, region, store_type)
         print("\n🏪 Creating stores and warehouses...")
         store_objects = []
         for name, city, region, store_type in STORES:
             store = Store(
+                realm_id=realm_id,
                 name=name,
                 city=city,
                 region=region,
@@ -200,7 +239,8 @@ def generate_demo_data():
             db.add(store)
             store_objects.append(store)
         db.commit()
-        print(f"✅ Created {len(store_objects)} stores")
+        print(f"Created {len(store_objects)} stores")
+        create_demo_managers(db, realm_id, store_objects)
         
         today = date.today()
 
@@ -218,6 +258,7 @@ def generate_demo_data():
                 perishable_index += 1
 
             product = Product(
+                realm_id=realm_id,
                 sku=sku,
                 name=name,
                 category=category,
@@ -256,6 +297,7 @@ def generate_demo_data():
             
             warehouse_stock = WarehouseStock(
                 product_id=product.id,
+                realm_id=realm_id,
                 quantity=quantity
             )
             db.add(warehouse_stock)
@@ -312,6 +354,7 @@ def generate_demo_data():
                         revenue = product.price * Decimal(daily_qty)
                         
                         sale = Sale(
+                            realm_id=realm_id,
                             product_id=product.id,
                             store_id=store.id,
                             quantity=daily_qty,
@@ -350,6 +393,7 @@ def generate_demo_data():
                 transfer_cost = Decimal("50.00") + (Decimal(qty) * Decimal("2.00"))
                 
                 transfer = Transfer(
+                    realm_id=realm_id,
                     from_store_id=from_store.id,
                     to_store_id=to_store.id,
                     product_id=product.id,

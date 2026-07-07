@@ -1,70 +1,105 @@
 """
-Create demo user directly in database
-Run after generate_demo_data_simple.py
+Create or repair demo users directly in the active database.
+
+This script is intentionally idempotent: rerun it any time the demo login stops
+working after migrations, reseeding, or local database resets.
 """
 
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).parent.parent))
 
-from sqlalchemy.orm import Session
+from app.core.security import hash_password
 from app.db.session import SessionLocal
-from app.models.user import User
-from passlib.context import CryptContext
+from app.models.analytics_data import Store
+from app.models.user import Realm, STORE_MANAGER, WAREHOUSE_OWNER, User
 
-# Create password context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+DEMO_PASSWORD = "demo1234"
 
-def create_demo_user():
-    """Create demo user"""
-    db = SessionLocal()
-    
-    try:
-        demo_email = "demo@mckinsey.com"
-        
-        # Check if user already exists
-        existing_user = db.query(User).filter(User.email == demo_email).first()
-        
-        if existing_user:
-            print(f"✅ Demo user already exists: {demo_email}")
-            print(f"   User ID: {existing_user.id}")
-            print(f"   Name: {existing_user.full_name}")
-            print(f"   Active: {existing_user.is_active}")
-            return
-        
-        # Create new user
-        user = User(
-            email=demo_email,
-            full_name="McKinsey Demo User",
-            hashed_password=hash_password("demo1234"),
-            is_active=True
-        )
+
+def upsert_user(
+    db,
+    *,
+    email: str,
+    full_name: str,
+    realm_id: int,
+    role: str,
+    assigned_store_id: int | None = None,
+) -> User:
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(email=email)
         db.add(user)
+    user.full_name = full_name
+    user.hashed_password = hash_password(DEMO_PASSWORD)
+    user.is_active = True
+    user.realm_id = realm_id
+    user.role = role
+    user.assigned_store_id = assigned_store_id
+    db.flush()
+    return user
+
+
+def create_demo_user() -> None:
+    db = SessionLocal()
+    try:
+        realm = db.query(Realm).filter(Realm.join_code == "8341").first()
+        if not realm:
+            realm = Realm(
+                name="StockLens Automotive Demo",
+                industry_tag="Automotive Parts",
+                join_code="8341",
+            )
+            db.add(realm)
+            db.flush()
+
+        owner = upsert_user(
+            db,
+            email="demo@mckinsey.com",
+            full_name="McKinsey Demo User",
+            realm_id=realm.id,
+            role=WAREHOUSE_OWNER,
+        )
+        realm.owner_user_id = owner.id
+
+        stores = db.query(Store).filter(Store.realm_id == realm.id).order_by(Store.id).all()
+        assigned_stores = [store for store in stores if store.store_type != "hub"] or stores
+        if assigned_stores:
+            upsert_user(
+                db,
+                email="chennai.manager@stocklens.local",
+                full_name="Chennai Store Manager",
+                realm_id=realm.id,
+                role=STORE_MANAGER,
+                assigned_store_id=assigned_stores[min(4, len(assigned_stores) - 1)].id,
+            )
+            upsert_user(
+                db,
+                email="mumbai.manager@stocklens.local",
+                full_name="Mumbai Store Manager",
+                realm_id=realm.id,
+                role=STORE_MANAGER,
+                assigned_store_id=assigned_stores[0].id,
+            )
+
+        upsert_user(
+            db,
+            email="unassigned.manager@stocklens.local",
+            full_name="Unassigned Store Manager",
+            realm_id=realm.id,
+            role=STORE_MANAGER,
+            assigned_store_id=None,
+        )
+
         db.commit()
-        db.refresh(user)
-        
-        print("=" * 60)
-        print("✅ DEMO USER CREATED SUCCESSFULLY")
-        print("=" * 60)
-        print(f"Email: {demo_email}")
-        print(f"Password: demo1234")
-        print(f"User ID: {user.id}")
-        print(f"Full Name: {user.full_name}")
-        print("=" * 60)
-        print("\n🎯 Next Steps:")
-        print("   1. Start backend: uvicorn app.main:app --reload")
-        print("   2. Start frontend: npm run dev")
-        print("   3. Login at http://localhost:3000")
-        print("=" * 60)
-        
-    except Exception as e:
+        print("Demo users are ready.")
+        print(f"Owner: demo@mckinsey.com / {DEMO_PASSWORD}")
+        print(f"Join code: {realm.join_code}")
+        print(f"Managers use password: {DEMO_PASSWORD}")
+    except Exception:
         db.rollback()
-        print(f"\n❌ Error creating demo user: {e}")
-        import traceback
-        traceback.print_exc()
         raise
     finally:
         db.close()

@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { InventoryTable } from "@/components/inventory/InventoryTable";
 import { fetchAnalytics } from "@/lib/api";
 import { InventoryItem } from "@/lib/types";
@@ -6,8 +9,15 @@ interface InventoryResponse {
   items: InventoryItem[];
 }
 
-export default async function InventoryPage() {
-  const { items } = await fetchAnalytics<InventoryResponse>("/api/analytics/inventory");
+export default function InventoryPage() {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAnalytics<InventoryResponse>("/api/analytics/inventory")
+      .then((data) => setItems(data.items ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load inventory"));
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8 space-y-4">
@@ -18,6 +28,7 @@ export default async function InventoryPage() {
           decision engine for a deeper explanation.
         </p>
       </div>
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
       <InventoryTable data={items} />
     </div>
   );

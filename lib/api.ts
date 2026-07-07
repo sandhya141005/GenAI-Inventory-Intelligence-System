@@ -14,6 +14,10 @@ export async function fetchAnalytics<T>(path: string): Promise<T> {
   });
 
  if (!response.ok) {
+  if (response.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
   const errorText = await response.text();
 
   console.log("API FAILED");
@@ -43,6 +47,10 @@ export async function fetchAI<T>(path: string, options?: RequestInit): Promise<T
     }
     const error = await response.json().catch(() => ({ detail: "Request failed" }));
     throw new Error(error.detail || `AI API request failed: ${path}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;

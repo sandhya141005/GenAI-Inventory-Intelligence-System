@@ -7,6 +7,12 @@ interface User {
   email: string;
   full_name: string;
   is_active: boolean;
+  realm_id: number | null;
+  role: "WAREHOUSE_OWNER" | "STORE_MANAGER" | null;
+  assigned_store_id: number | null;
+  assigned_store_name: string | null;
+  realm_name: string | null;
+  industry_tag: string | null;
 }
 
 interface AuthTokens {
@@ -19,8 +25,18 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName: string) => Promise<void>;
+  signup: (payload: SignupPayload) => Promise<void>;
   logout: () => void;
+}
+
+export interface SignupPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  company_name: string;
+  industry_tag: string;
+  realm_action: "create" | "join";
+  join_code?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -118,11 +134,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(currentUser);
   }
 
-  async function signup(email: string, password: string, fullName: string) {
+  async function signup(payload: SignupPayload) {
     const response = await fetch(`${API_URL}/api/auth/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, full_name: fullName }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -130,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.detail || "Signup failed");
     }
 
-    await login(email, password);
+    await login(payload.email, payload.password);
   }
 
   function logout() {

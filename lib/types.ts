@@ -140,6 +140,12 @@ export interface User {
   email: string;
   full_name: string;
   is_active: boolean;
+  realm_id: number | null;
+  role: "WAREHOUSE_OWNER" | "STORE_MANAGER" | null;
+  assigned_store_id: number | null;
+  assigned_store_name: string | null;
+  realm_name: string | null;
+  industry_tag: string | null;
 }
 
 export interface AuthTokens {

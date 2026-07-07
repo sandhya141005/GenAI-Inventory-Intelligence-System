@@ -17,6 +17,7 @@ class CopilotState(TypedDict, total=False):
     business_context: dict[str, Any]
     conversation_history: list[dict[str, str]]
     metadata: dict[str, Any]
+    scope: Any
     llm_response: str
     response: str
     confidence: str
@@ -60,6 +61,7 @@ def add_business_context(state: CopilotState) -> CopilotState:
             user_input=state["user_input"],
             user_id=state["user_id"],
             db=db,
+            scope=state.get("scope"),
         )
         state["analytics_used"] = state["business_context"].get("analytics_used", [])
     except Exception as e:
@@ -203,6 +205,7 @@ def run_copilot_workflow(
     conversation_history: list[dict[str, str]] | None = None,
     metadata: dict[str, Any] | None = None,
     db: Session | None = None,
+    scope=None,
 ) -> dict[str, Any]:
     state = copilot_graph.invoke(
         {
@@ -212,6 +215,7 @@ def run_copilot_workflow(
             "conversation_history": conversation_history or [],
             "metadata": metadata or {},
             "db": db,
+            "scope": scope,
         }
     )
     return {

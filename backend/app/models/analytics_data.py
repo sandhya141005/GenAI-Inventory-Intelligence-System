@@ -11,6 +11,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column("product_id", primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     sku: Mapped[str | None] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(150))
     category: Mapped[str | None] = mapped_column(String(100), index=True)
@@ -23,6 +24,7 @@ class DonationLog(Base):
     __tablename__ = "donations_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.product_id"), index=True)
     orphanage_name: Mapped[str] = mapped_column(String(150), nullable=False)
     orphanage_city: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -38,6 +40,7 @@ class Store(Base):
     __tablename__ = "stores"
 
     id: Mapped[int] = mapped_column("store_id", primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     name: Mapped[str | None] = mapped_column(String(100))
     city: Mapped[str | None] = mapped_column(String(100))
     region: Mapped[str | None] = mapped_column(String(100), index=True)
@@ -48,6 +51,7 @@ class Sale(Base):
     __tablename__ = "sales"
 
     id: Mapped[int] = mapped_column("sale_id", primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.product_id"), index=True)
     store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.store_id"), index=True)
     sale_date: Mapped[date | None] = mapped_column(Date, index=True)
@@ -62,6 +66,7 @@ class WarehouseStock(Base):
     __tablename__ = "warehouse_stock"
 
     product_id: Mapped[int] = mapped_column(ForeignKey("products.product_id"), primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     quantity: Mapped[int | None] = mapped_column(Integer)
 
     product: Mapped[Product] = relationship()
@@ -71,6 +76,7 @@ class Transfer(Base):
     __tablename__ = "transfers"
 
     id: Mapped[int] = mapped_column("transfer_id", primary_key=True)
+    realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
     from_store_id: Mapped[int | None] = mapped_column("from_store", ForeignKey("stores.store_id"), index=True)
     to_store_id: Mapped[int | None] = mapped_column("to_store", ForeignKey("stores.store_id"), index=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.product_id"), index=True)

@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { fetchAnalytics } from "@/lib/api";
 import { TransferCard } from "@/components/transfer-card";
 
@@ -20,8 +23,15 @@ interface TransfersResponse {
   transfers: TransferItem[];
 }
 
-export default async function TransfersPage() {
-  const { transfers } = await fetchAnalytics<TransfersResponse>("/api/analytics/transfers");
+export default function TransfersPage() {
+  const [transfers, setTransfers] = useState<TransferItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAnalytics<TransfersResponse>("/api/analytics/transfers")
+      .then((data) => setTransfers(data.transfers ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load transfers"));
+  }, []);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-4">
@@ -31,6 +41,7 @@ export default async function TransfersPage() {
           Inventory movements from transfer records and rule-based imbalance detection.
         </p>
       </div>
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       <div className="space-y-3">
         {transfers.map((t) => (

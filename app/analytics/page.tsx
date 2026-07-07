@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import { fetchAnalytics } from "@/lib/api";
 
 interface ChartsResponse {
   revenueTrend: { labels: string[]; values: number[] };
@@ -20,17 +21,15 @@ function ChartCard({ title, option, height = 260 }: { title: string; option: obj
 
 export default function AnalyticsPage() {
   const [charts, setCharts] = useState<ChartsResponse | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-    fetch(`${apiUrl}/api/analytics/charts`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Unable to load analytics charts");
-        }
-        return response.json();
+    fetchAnalytics<ChartsResponse>("/api/analytics/charts")
+      .then((data) => {
+        setCharts(data);
+        setError("");
       })
-      .then(setCharts);
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load analytics charts"));
   }, []);
 
   const revenueTrend = {
@@ -63,6 +62,8 @@ export default function AnalyticsPage() {
           Supporting detail behind the deterministic recommendations.
         </p>
       </div>
+
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Revenue Trend (7 days)" option={revenueTrend} />

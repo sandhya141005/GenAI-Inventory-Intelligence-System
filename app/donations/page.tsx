@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { HandHeart, Mail, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { fetchAI } from "@/lib/api";
@@ -20,8 +23,15 @@ function formatTimestamp(value: string | null) {
   }).format(new Date(value));
 }
 
-export default async function DonationsPage() {
-  const { items } = await fetchAI<DonationHistoryResponse>("/api/donations/history");
+export default function DonationsPage() {
+  const [items, setItems] = useState<DonationHistoryItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchAI<DonationHistoryResponse>("/api/donations/history")
+      .then((data) => setItems(data.items ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load donation history"));
+  }, []);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-5">
@@ -34,6 +44,8 @@ export default async function DonationsPage() {
         </div>
         <Badge variant="accent">{items.length} requests</Badge>
       </div>
+
+      {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
       {items.length === 0 ? (
         <div className="rounded-lg border border-border bg-surface p-6 text-sm text-ink-muted shadow-soft">

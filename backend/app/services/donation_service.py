@@ -19,11 +19,12 @@ class MailResult:
 
 
 class DonationService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, scope=None) -> None:
         self.db = db
+        self.scope = scope
 
     def notify_orphanages(self, product_id: int) -> dict:
-        suggestion = SmartInventoryActionEngine(self.db).suggestion_for_product(product_id)
+        suggestion = SmartInventoryActionEngine(self.db, self.scope).suggestion_for_product(product_id)
         if suggestion is None or suggestion["action"] != "DONATE":
             return {"sent": 0, "status": "skipped", "detail": "Product is not currently a donation suggestion.", "notifications": []}
 
@@ -33,6 +34,7 @@ class DonationService:
             body = self._email_body(suggestion, orphanage)
             result = self._send_email(orphanage["email"], f"Donation available: {suggestion['product_name']}", body)
             log = DonationLog(
+                realm_id=getattr(self.scope, "realm_id", None),
                 product_id=product_id,
                 orphanage_name=orphanage["name"],
                 orphanage_city=orphanage["city"],
@@ -52,7 +54,10 @@ class DonationService:
         }
 
     def donation_history(self) -> dict:
-        rows = self.db.query(DonationLog).order_by(DonationLog.created_at.desc()).limit(50).all()
+        query = self.db.query(DonationLog)
+        if self.scope is not None:
+            query = query.filter(DonationLog.realm_id == self.scope.realm_id)
+        rows = query.order_by(DonationLog.created_at.desc()).limit(50).all()
         return {
             "items": [
                 {

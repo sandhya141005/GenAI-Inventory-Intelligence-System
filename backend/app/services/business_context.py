@@ -6,11 +6,11 @@ from app.db.session import get_db
 from app.services.analytics_service import AnalyticsService
 
 
-def fetch_business_context(intent: str, user_input: str, user_id: int, db: Session | None = None) -> dict:
+def fetch_business_context(intent: str, user_input: str, user_id: int, db: Session | None = None, scope=None) -> dict:
     if db is None:
         db = next(get_db())
     
-    analytics = AnalyticsService(db)
+    analytics = AnalyticsService(db, scope)
     user_input_lower = user_input.lower()
     
     context = {
@@ -21,6 +21,15 @@ def fetch_business_context(intent: str, user_input: str, user_id: int, db: Sessi
         "query": user_input,
         "analytics_used": [],
     }
+    if scope is not None:
+        context["realm_id"] = scope.realm_id
+        context["role"] = scope.role
+        context["assigned_store_id"] = scope.assigned_store_id
+
+    if scope is not None and getattr(scope, "requires_store_assignment", False):
+        context["requires_store_assignment"] = True
+        context["message"] = "The user is waiting for a Warehouse Owner to assign a store."
+        return context
     
     try:
         if intent in ("executive_summary", "chat", "morning_brief", "weekly_report"):
