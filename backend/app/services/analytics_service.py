@@ -247,6 +247,36 @@ class AnalyticsService:
 
     def reports(self) -> dict:
         overview = self.overview()
+        metrics = self._inventory_metrics()
+
+        content = f"""
+    Inventory Decision Report
+
+    Summary:
+    {overview["summary"]["headline"]}
+
+    Details:
+    {overview["summary"]["detail"]}
+
+    Key Performance Indicators:
+    """
+
+        for kpi in overview["kpis"]:
+            content += f"""
+    {kpi["label"]}: {kpi["value"]}
+    Status: {kpi["status"]}
+    """
+
+        content += "\nTop Recommendations:\n"
+
+        for rec in self.recommendations()["recommendations"][:5]:
+            content += f"""
+    - {rec["title"]}
+    Reason: {rec["reason"]}
+    Impact: {rec["impact"]}
+    Confidence: {rec["confidence"]}%
+    """
+
         return {
             "reports": [
                 {
@@ -255,6 +285,7 @@ class AnalyticsService:
                     "summary": overview["summary"]["headline"],
                     "generatedBy": "Decision Intelligence Engine",
                     "lastUpdated": self.today.isoformat(),
+                    "content": content
                 },
                 {
                     "id": "risk-report",
@@ -262,9 +293,10 @@ class AnalyticsService:
                     "summary": overview["summary"]["detail"],
                     "generatedBy": "Decision Intelligence Engine",
                     "lastUpdated": self.today.isoformat(),
-                },
+                    "content": content
+                }
             ]
-        }
+    }
 
     def charts(self) -> dict:
         revenue_rows = self.db.execute(

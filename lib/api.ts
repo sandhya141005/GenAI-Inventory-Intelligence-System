@@ -7,18 +7,21 @@ function getAuthHeaders(): HeadersInit {
 }
 
 export async function fetchAnalytics<T>(path: string): Promise<T> {
+  console.log("Calling API:", `${API_URL}${path}`);
   const response = await fetch(`${API_URL}${path}`, {
     cache: "no-store",
     headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    if (response.status === 401 && typeof window !== "undefined") {
-      window.location.href = "/login";
-      throw new Error("Unauthorized");
-    }
-    throw new Error(`Analytics API request failed: ${path}`);
-  }
+ if (!response.ok) {
+  const errorText = await response.text();
+
+  console.log("API FAILED");
+  console.log("STATUS:", response.status);
+  console.log("BODY:", errorText);
+
+  throw new Error(`Analytics API request failed: ${path}`);
+}
 
   return response.json() as Promise<T>;
 }

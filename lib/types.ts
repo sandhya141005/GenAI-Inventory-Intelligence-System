@@ -89,12 +89,14 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+// lib/types.ts
 export interface ReportSummary {
   id: string;
   title: string;
   summary: string;
-  generatedBy: string;
+  content: string; // full report body — markdown or plain text
   lastUpdated: string;
+  generatedBy: string;
 }
 
 export interface NoticeItem {
