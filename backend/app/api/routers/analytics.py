@@ -52,3 +52,35 @@ def inventory_aging(db: Session = Depends(get_db)) -> dict:
 @router.get("/notices")
 def notices(db: Session = Depends(get_db)) -> dict:
     return AnalyticsService(db).notices()
+from decimal import Decimal
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.services.analytics_service import AnalyticsService, InsufficientStockError
+
+
+class InitiateTransferRequest(BaseModel):
+    productId: int
+    fromStoreId: int
+    toStoreId: int
+    units: int
+    transferCost: float = 0.0
+
+
+@router.post("/transfers/initiate")
+def initiate_transfer(payload: InitiateTransferRequest, db: Session = Depends(get_db)):
+    service = AnalyticsService(db)
+    try:
+        return service.initiate_transfer(
+            product_id=payload.productId,
+            from_store_id=payload.fromStoreId,
+            to_store_id=payload.toStoreId,
+            quantity=payload.units,
+            transfer_cost=Decimal(str(payload.transferCost)),
+        )
+    except InsufficientStockError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

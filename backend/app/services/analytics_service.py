@@ -16,7 +16,8 @@ from app.services.action_engine import SmartInventoryActionEngine
 LEAD_TIME_FACTOR = Decimal("3")
 HOLDING_COST_RATE = Decimal("0.20")
 DEMAND_SPIKE_MULTIPLIER = Decimal("1.50")
-
+class InsufficientStockError(Exception):
+    pass
 
 @dataclass(frozen=True)
 class InventoryMetric:
@@ -290,7 +291,7 @@ class AnalyticsService:
                 {
                     "id": "risk-report",
                     "title": "Stockout and Overstock Risk",
-                    "summary": overview["summary"]["detail"],
+                    "summarsy": overview["summary"]["detail"],
                     "generatedBy": "Decision Intelligence Engine",
                     "lastUpdated": self.today.isoformat(),
                     "content": content
@@ -317,7 +318,59 @@ class AnalyticsService:
             "storePerformance": {"labels": list(store_scores.keys()), "values": list(store_scores.values())},
             "categoryMix": {"labels": list(category_counts.keys()), "values": list(category_counts.values())},
         }
+    def initiate_transfer(
+        self,
+        product_id: int,
+        from_store_id: int,
+        to_store_id: int,
+        quantity: int,
+        transfer_cost: Decimal = Decimal("0"),
+    ) -> dict:
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive")
 
+        stock = self.db.execute(
+            select(WarehouseStock).where(WarehouseStock.product_id == product_id)
+        ).scalar_one_or_none()
+
+        current_qty = int(stock.quantity) if stock else 0
+        if current_qty < quantity:
+            raise InsufficientStockError(f"Only {current_qty} units available for product {product_id}")
+
+        stock.quantity = current_qty - quantity
+
+        transfer = Transfer(
+            from_store_id=from_store_id,
+            to_store_id=to_store_id,
+            product_id=product_id,
+            quantity=quantity,
+            transfer_cost=transfer_cost,
+            transfer_date=self.today,
+        )
+        self.db.add(transfer)
+        self.db.commit()
+        self.db.refresh(transfer)
+
+        product = self.db.get(Product, product_id)
+        from_store = self.db.get(Store, from_store_id)
+        to_store = self.db.get(Store, to_store_id)
+
+        self._metrics_cache = None
+
+        return {
+            "id": f"TR-{transfer.id}",
+            "productId": product_id,
+            "product": product.name if product else str(product_id),
+            "fromStoreId": from_store_id,
+            "from": from_store.name if from_store else str(from_store_id),
+            "toStoreId": to_store_id,
+            "to": to_store.name if to_store else str(to_store_id),
+            "units": quantity,
+            "transferCost": float(transfer_cost),
+            "revenueAtRisk": 0.0,
+            "status": "Completed",
+            "eta": transfer.transfer_date.isoformat(),
+        }
     def transfers(self) -> dict:
         from_store_alias = aliased(Store)
         to_store_alias = aliased(Store)
@@ -331,18 +384,22 @@ class AnalyticsService:
         existing = [
             {
                 "id": f"TR-{transfer.id}",
+                "productId": product.id,
                 "product": product.name or product.sku or str(product.id),
+                "fromStoreId": from_store.id,
                 "from": from_store.name or str(from_store.id),
+                "toStoreId": to_store.id,
                 "to": to_store.name or str(to_store.id),
                 "units": int(transfer.quantity or 0),
-                "status": "Recorded",
+                "transferCost": float(transfer.transfer_cost or 0),
+                "revenueAtRisk": 0.0,
+                "status": "Completed",
                 "eta": transfer.transfer_date.isoformat() if transfer.transfer_date else "",
             }
             for transfer, product, from_store, to_store in rows
         ]
         suggestions = [self._transfer_suggestion(metric) for metric in self._inventory_metrics() if metric.demand_spike or metric.stockout_risk]
         return {"transfers": existing + [suggestion for suggestion in suggestions if suggestion]}
-
     def inventory_aging(self) -> dict:
         items = sorted(self._inventory_metrics(), key=lambda metric: metric.inventory_value, reverse=True)
         return {"items": [self._aging_item(metric) for metric in items]}
@@ -473,12 +530,19 @@ class AnalyticsService:
         source_surplus = max(1, source.inventory - int(source.demand * 2))
         target_gap = max(1, int(metric.demand * LEAD_TIME_FACTOR) - metric.inventory)
         units = max(1, floor(min(source_surplus, target_gap)))
+        product = self.db.get(Product, metric.product_id)
+        transfer_cost = float(units) * 2.5  # simple per-unit cost estimate; adjust as needed
         return {
             "id": f"SUG-{source.store_id}-{metric.store_id}-{metric.product_id}",
+            "productId": metric.product_id,
             "product": metric.product,
+            "fromStoreId": source.store_id,
             "from": source.store,
+            "toStoreId": metric.store_id,
             "to": metric.store,
             "units": units,
+            "transferCost": round(transfer_cost, 2),
+            "revenueAtRisk": float(metric.revenue_at_risk),
             "status": "Recommended",
             "eta": "Rule-based",
         }

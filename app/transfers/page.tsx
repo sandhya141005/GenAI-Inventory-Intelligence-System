@@ -1,14 +1,17 @@
-import { ArrowRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { fetchAnalytics } from "@/lib/api";
+import { TransferCard } from "@/components/transfer-card";
 
 interface TransferItem {
   id: string;
+  productId: number;
   product: string;
+  fromStoreId: number;
   from: string;
+  toStoreId: number;
   to: string;
   units: number;
+  transferCost: number;
+  revenueAtRisk: number;
   status: string;
   eta: string;
 }
@@ -16,13 +19,6 @@ interface TransferItem {
 interface TransfersResponse {
   transfers: TransferItem[];
 }
-
-const statusVariant: Record<string, "success" | "warning" | "accent" | "neutral"> = {
-  "In Transit": "accent",
-  "Pending Approval": "warning",
-  Completed: "success",
-  Recommended: "warning",
-};
 
 export default async function TransfersPage() {
   const { transfers } = await fetchAnalytics<TransfersResponse>("/api/analytics/transfers");
@@ -38,25 +34,7 @@ export default async function TransfersPage() {
 
       <div className="space-y-3">
         {transfers.map((t) => (
-          <div key={t.id} className="rounded-lg border border-border bg-surface p-5 shadow-soft">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-ink-muted">{t.id}</span>
-              <Badge variant={statusVariant[t.status] ?? "neutral"}>{t.status}</Badge>
-            </div>
-            <h3 className="mt-1 text-sm font-semibold text-ink">{t.product}</h3>
-            <div className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
-              <span>{t.from}</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-              <span>{t.to}</span>
-              <span className="ml-2 font-medium text-ink">{t.units} units</span>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs text-ink-muted">ETA: {t.eta}</span>
-              <Button size="sm" variant="secondary">
-                View Details
-              </Button>
-            </div>
-          </div>
+          <TransferCard key={t.id} transfer={t} />
         ))}
       </div>
     </div>
