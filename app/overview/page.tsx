@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { RecommendationCard } from "@/components/dashboard/RecommendationCard";
-import { SuggestedActionsSection } from "@/components/dashboard/SuggestedActionsSection";
+// import { SuggestedActionsSection } from "@/components/dashboard/SuggestedActionsSection";
 import { fetchAnalytics } from "@/lib/api";
 import { InventoryActionSuggestion, KPI, Recommendation } from "@/lib/types";
 
@@ -54,7 +54,7 @@ export default function OverviewPage() {
       </section>
       {error && <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
 
-      <SuggestedActionsSection suggestions={actionSuggestions} />
+      {/* <SuggestedActionsSection suggestions={actionSuggestions} /> */}
 
       <section>
         <div className="flex items-center justify-between mb-3">

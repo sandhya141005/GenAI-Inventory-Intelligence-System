@@ -37,7 +37,7 @@ function createWelcomeMessage(): ChatMessage {
   return {
     id: "initial-ai-welcome",
     role: "assistant",
-    text: "Welcome to the AI Food Inventory Copilot. I'm powered by OpenAI and have access to your complete food inventory data across all stores and warehouses.",
+    text: "Welcome to the AI Food Inventory Copilot. I'm powered by Groq and have access to your complete food inventory data across all stores and warehouses.",
 
     timestamp: timestamp(),
   };
@@ -194,7 +194,7 @@ export function CopilotPanel() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">AI Inventory Copilot</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Powered by OpenAI + LangGraph. Real-time inventory intelligence from PostgreSQL.
+                Powered by Groq + LangGraph. Real-time inventory intelligence from PostgreSQL.
               </p>
             </div>
           </div>
