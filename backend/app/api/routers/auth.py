@@ -60,14 +60,17 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> dict:
     existing = db.scalar(select(User).where(User.email == payload.email.lower()))
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
-    if payload.industry_tag not in INDUSTRY_TAGS:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported industry tag")
-
     user = User(email=payload.email.lower(), full_name=payload.full_name, hashed_password=hash_password(payload.password))
     db.add(user)
     db.flush()
 
     if payload.realm_action == "create":
+        if not payload.company_name:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Company name is required")
+        if not payload.industry_tag:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Industry tag is required")
+        if payload.industry_tag not in INDUSTRY_TAGS:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported industry tag")
         realm = Realm(
             name=payload.company_name.strip(),
             industry_tag=payload.industry_tag,

@@ -7,8 +7,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: str | None = Field(default=None, max_length=255)
-    company_name: str = Field(min_length=2, max_length=255)
-    industry_tag: str = Field(min_length=2, max_length=120)
+    company_name: str | None = Field(default=None, min_length=2, max_length=255)
+    industry_tag: str | None = Field(default=None, min_length=2, max_length=120)
     realm_action: Literal["create", "join"]
     join_code: str | None = Field(default=None, min_length=4, max_length=4)
 

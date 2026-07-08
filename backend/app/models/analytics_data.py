@@ -25,6 +25,7 @@ class DonationLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     realm_id: Mapped[int | None] = mapped_column(ForeignKey("realms.id"), index=True, nullable=True)
+    store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.store_id"), index=True, nullable=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.product_id"), index=True)
     orphanage_name: Mapped[str] = mapped_column(String(150), nullable=False)
     orphanage_city: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -34,6 +35,7 @@ class DonationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     product: Mapped[Product] = relationship()
+    store: Mapped["Store"] = relationship()
 
 
 class Store(Base):

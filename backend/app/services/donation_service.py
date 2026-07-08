@@ -35,6 +35,7 @@ class DonationService:
             result = self._send_email(orphanage["email"], f"Donation available: {suggestion['product_name']}", body)
             log = DonationLog(
                 realm_id=getattr(self.scope, "realm_id", None),
+                store_id=suggestion.get("store_id"),
                 product_id=product_id,
                 orphanage_name=orphanage["name"],
                 orphanage_city=orphanage["city"],
@@ -57,6 +58,8 @@ class DonationService:
         query = self.db.query(DonationLog)
         if self.scope is not None:
             query = query.filter(DonationLog.realm_id == self.scope.realm_id)
+            if getattr(self.scope, "is_store_manager", False):
+                query = query.filter(DonationLog.store_id == self.scope.assigned_store_id)
         rows = query.order_by(DonationLog.created_at.desc()).limit(50).all()
         return {
             "items": [
