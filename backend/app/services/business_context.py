@@ -32,6 +32,23 @@ def fetch_business_context(intent: str, user_input: str, user_id: int, db: Sessi
         return context
     
     try:
+        if intent == "nl_query":
+            context["schema_info"] = {
+                "realm_id": scope.realm_id if scope else None,
+                "assigned_store_id": scope.assigned_store_id if scope and scope.is_store_manager else None,
+                "role": scope.role if scope else None,
+                "tables": [
+                    "products (product_id, realm_id, sku, name, category, cost, price, expiry_date)",
+                    "stores (store_id, realm_id, name, city, region, store_type)",
+                    "sales (sale_id, realm_id, product_id, store_id, sale_date, quantity, revenue)",
+                    "inventory_stock (product_id, store_id, realm_id, quantity, last_updated)",
+                    "transfers (transfer_id, realm_id, from_store, to_store, product_id, quantity, transfer_cost, transfer_date)",
+                    "donations_log (id, realm_id, product_id, orphanage_name, orphanage_city, status, created_at)"
+                ],
+                "access_note": "Store Managers can only query data for their assigned store. Warehouse Owners can query all stores in their realm."
+            }
+            context["analytics_used"].append("schema_info")
+        
         if intent in ("executive_summary", "chat", "morning_brief", "weekly_report"):
             context["overview"] = analytics.overview()
             context["analytics_used"].append("overview")

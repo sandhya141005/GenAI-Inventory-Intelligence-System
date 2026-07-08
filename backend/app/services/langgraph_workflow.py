@@ -31,38 +31,66 @@ def classify_intent(state: CopilotState) -> CopilotState:
     if requested and requested != "chat":
         state["intent"] = requested
         return state
-
-    text = state["user_input"].lower()
     
-    if "root cause" in text or ("why" in text and ("decrease" in text or "increase" in text or "drop" in text)):
-        intent = "root_cause_analysis"
-    elif "recommend" in text or "action" in text or "should i" in text or "what to do" in text:
-        intent = "recommendations"
-    elif "sql" in text or "query" in text or "database" in text:
-        intent = "nl_query"
-    elif "weekly" in text and ("report" in text or "summary" in text):
-        intent = "weekly_report"
-    elif ("morning" in text or "brief" in text or "today" in text) and ("summary" in text or "brief" in text):
-        intent = "morning_brief"
-    elif "executive" in text or "summary" in text or "overview" in text:
-        intent = "executive_summary"
-    else:
-        intent = "inventory_agent"
+    from app.services.intent_classifier import IntentClassifier
+    
+    classifier = IntentClassifier()
+    conversation_history = state.get("conversation_history", [])
+    
+    intent = classifier.classify(state["user_input"], conversation_history)
+    confidence = classifier.get_intent_confidence(state["user_input"], intent)
     
     state["intent"] = intent
+    state["intent_confidence"] = confidence
+    
     return state
 
 
 def add_business_context(state: CopilotState) -> CopilotState:
     try:
         db = state.get("db") or next(get_db())
+        scope = state.get("scope")
+        
+        # Fetch business analytics data
         state["business_context"] = fetch_business_context(
             intent=state["intent"],
             user_input=state["user_input"],
             user_id=state["user_id"],
             db=db,
-            scope=state.get("scope"),
+            scope=scope,
         )
+        
+        # Add role-specific context enrichment
+        if scope:
+            from app.services.role_context import build_role_context
+            from app.models.user import User
+            
+            state["business_context"]["role_context"] = build_role_context(scope, db)
+            
+            # Add industry context
+            user = db.get(User, state["user_id"])
+            if user and user.realm:
+                state["business_context"]["industry_tag"] = user.realm.industry_tag
+        
+        # Add persistent memory and personalization
+        from app.services.persistent_memory import PersistentMemoryService
+        from app.services.personalization_service import PersonalizationService
+        
+        memory_service = PersistentMemoryService(db, state["user_id"], scope)
+        personalization_service = PersonalizationService(db, state["user_id"], scope)
+        
+        persistent_memory = memory_service.build_complete_memory()
+        state["business_context"]["persistent_memory"] = persistent_memory
+        
+        if "overview" in state["business_context"]:
+            state["business_context"]["overview"] = personalization_service.personalize_overview(
+                state["business_context"]["overview"]
+            )
+        
+        state["business_context"] = personalization_service.enhance_context_with_memory(
+            state["business_context"]
+        )
+        
         state["analytics_used"] = state["business_context"].get("analytics_used", [])
     except Exception as e:
         state["error"] = f"Failed to fetch business context: {str(e)}"
@@ -86,50 +114,95 @@ def call_llm(state: CopilotState) -> CopilotState:
         return state
     
     try:
-        prompt = load_prompt(state["intent"])
-        history = state.get("conversation_history", [])
+        # Get role and industry for personalized prompt
+        scope = state.get("scope")
+        role = scope.role if scope else None
         
+        context = state['business_context']
+        industry_tag = context.get("industry_tag")
+        role_ctx = context.get("role_context", {})
+        
+        # Load role and industry-specific prompt
+        prompt = load_prompt(state["intent"], role=role, industry=industry_tag)
+        
+        # Format conversation history
+        history = state.get("conversation_history", [])
         history_text = ""
         if history:
-            history_text = "Previous conversation:\n"
+            history_text = "\n**Recent Conversation:**\n"
             for msg in history[-6:]:
-                history_text += f"{msg['role']}: {msg['content'][:200]}\n"
+                role_label = "You" if msg['role'] == "assistant" else "User"
+                history_text += f"{role_label}: {msg['content'][:150]}\n"
+            history_text += "\n"
         
-        # Simplify business context to avoid token limits
-        context = state['business_context']
-        simplified_context = {}
+        # ENHANCED: Rich context enrichment
+        from app.services.context_enrichment import (
+            enrich_business_context,
+            format_enriched_context_for_llm
+        )
+        from app.services.persistent_memory import PersistentMemoryService
         
-        # Only include non-dict values and summaries
-        for key, value in context.items():
-            if key in ['as_of', 'intent', 'user_id', 'source', 'query', 'analytics_used', 'error', 'partial_failure']:
-                simplified_context[key] = value
-            elif isinstance(value, dict):
-                # For overview, extract just summary
-                if key == 'overview' and 'summary' in value:
-                    simplified_context[key] = {
-                        'summary': value['summary'],
-                        'kpi_count': len(value.get('kpis', [])),
-                        'recommendation_count': len(value.get('recommendations', []))
-                    }
-                # For other dicts, just count items
-                elif isinstance(value, dict):
-                    simplified_context[f"{key}_available"] = True
-                    if 'items' in value:
-                        simplified_context[f"{key}_count"] = len(value['items'])
-                    elif key.endswith('s'):  # plural keys like 'recommendations', 'transfers'
-                        # Try to get the list
-                        for subkey, subvalue in value.items():
-                            if isinstance(subvalue, list):
-                                simplified_context[f"{key}_count"] = len(subvalue)
-                                break
+        enriched_context = enrich_business_context(context, role_ctx, industry_tag)
+        detailed_context_text = format_enriched_context_for_llm(enriched_context)
         
+        # Add persistent memory to context
+        persistent_memory = context.get("persistent_memory", {})
+        memory_text = ""
+        if persistent_memory:
+            db = state.get("db")
+            if db:
+                memory_service = PersistentMemoryService(db, state["user_id"], scope)
+                memory_text = "\n" + memory_service.format_memory_for_llm(persistent_memory) + "\n"
+        
+        # Get personalized emphasis
+        personalization = context.get("personalization", {})
+        emphasis_text = ""
+        if personalization:
+            emphasis = personalization.get("emphasis", {})
+            greeting = personalization.get("greeting", "")
+            emphasis_text = (
+                f"\n**Personalization Settings:**\n"
+                f"Greeting: {greeting}\n"
+                f"Detail Level: {emphasis.get('detail_level', 'balanced')}\n"
+                f"Focus: {emphasis.get('focus', 'operational')}\n"
+                f"Presentation: {emphasis.get('data_presentation', 'summary')}\n\n"
+            )
+        
+        # Add schema info for nl_query intent
+        schema_text = ""
+        if state["intent"] == "nl_query":
+            schema_info = context.get("schema_info", {})
+            if schema_info:
+                schema_text = (
+                    f"\n**USER ACCESS SCOPE:**\n"
+                    f"Realm ID: {schema_info.get('realm_id')}\n"
+                    f"Role: {schema_info.get('role')}\n"
+                )
+                if schema_info.get('assigned_store_id'):
+                    schema_text += f"Assigned Store ID: {schema_info['assigned_store_id']}\n"
+                    schema_text += "**IMPORTANT**: This user can ONLY access data for their assigned store. Filter all queries by assigned_store_id.\n"
+                else:
+                    schema_text += "**IMPORTANT**: This user can access all stores in their realm. Filter all queries by realm_id.\n"
+                schema_text += f"\n{schema_info.get('access_note', '')}\n\n"
+        
+        # Build comprehensive user prompt
         user_prompt = (
-            f"User request:\n{state['user_input']}\n\n"
-            f"{history_text}\n"
-            f"Context summary: {simplified_context}\n\n"
-            f"Full data available: {', '.join(state['business_context'].get('analytics_used', []))}\n"
-            f"Respond based on the available analytics data. If you need specific details, "
-            f"acknowledge what data is available and provide insights based on that."
+            f"{memory_text}"
+            f"{schema_text}"
+            f"{detailed_context_text}\n\n"
+            f"{emphasis_text}"
+            f"{history_text}"
+            f"**Current User Request:**\n{state['user_input']}\n\n"
+            f"**Available Analytics Data:** {', '.join(context.get('analytics_used', []))}\n\n"
+            f"**Instructions:**\n"
+            f"Provide a highly personalized response that:\n"
+            f"1. Uses language appropriate for the user's role and data access level\n"
+            f"2. References specific data points from the detailed analysis above\n"
+            f"3. Builds on BOTH the recent conversation AND the persistent memory\n"
+            f"4. Uses industry-appropriate terminology\n"
+            f"5. Prioritizes insights matching the user's communication style and preferences\n"
+            f"6. Acknowledges any data limitations transparently\n"
+            f"7. Emphasizes content based on user's historical interests and decision patterns"
         )
         
         state["llm_response"] = LLMClient().generate(prompt, user_prompt)
