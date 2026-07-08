@@ -10,14 +10,15 @@ import { cn } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+type SignupStep = "account" | "choice" | "create" | "join";
+
 export default function SignupPage() {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<SignupStep>("account");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [industryTag, setIndustryTag] = useState("");
-  const [realmAction, setRealmAction] = useState<"create" | "join">("create");
   const [joinCode, setJoinCode] = useState("");
   const [industryTags, setIndustryTags] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -38,37 +39,40 @@ export default function SignupPage() {
       });
   }, []);
 
-  function nextStep() {
+  function accountIsValid() {
+    return fullName.trim() && email.trim() && password.length >= 8;
+  }
+
+  function goToChoice() {
     setError("");
-    if (step === 1 && (!fullName || !email || password.length < 8)) {
+    if (!accountIsValid()) {
       setError("Add your name, email, and a password with at least 8 characters.");
       return;
     }
-    if (step === 2 && (!companyName || !industryTag)) {
+    setStep("choice");
+  }
+
+  function goBack() {
+    setError("");
+    if (step === "choice") setStep("account");
+    if (step === "create" || step === "join") setStep("choice");
+  }
+
+  async function submitCreateRealm() {
+    setError("");
+    if (!companyName.trim() || !industryTag) {
       setError("Add your company name and choose an industry.");
       return;
     }
-    setStep((current) => Math.min(3, current + 1));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (realmAction === "join" && joinCode.trim().length !== 4) {
-      setError("Enter the 4-digit realm code from your Warehouse Owner.");
-      return;
-    }
     setIsLoading(true);
-
     try {
       await signup({
         email,
         password,
         full_name: fullName,
-        company_name: companyName,
+        company_name: companyName.trim(),
         industry_tag: industryTag,
-        realm_action: realmAction,
-        join_code: realmAction === "join" ? joinCode.trim() : undefined,
+        realm_action: "create",
       });
       router.push("/overview");
     } catch (err) {
@@ -77,6 +81,38 @@ export default function SignupPage() {
       setIsLoading(false);
     }
   }
+
+  async function submitJoinRealm() {
+    setError("");
+    if (joinCode.trim().length !== 4) {
+      setError("Enter the 4-digit realm code from your Warehouse Owner.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await signup({
+        email,
+        password,
+        full_name: fullName,
+        realm_action: "join",
+        join_code: joinCode.trim(),
+      });
+      router.push("/overview");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Signup failed");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (step === "account") goToChoice();
+    if (step === "create") void submitCreateRealm();
+    if (step === "join") void submitJoinRealm();
+  }
+
+  const progress = step === "account" ? 1 : step === "choice" ? 2 : 3;
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
@@ -94,14 +130,14 @@ export default function SignupPage() {
         <div className="grid grid-cols-3 gap-2">
           {[1, 2, 3].map((item) => (
             <div key={item} className="flex items-center gap-2">
-              <div className={cn("h-2 flex-1 rounded-full", step >= item ? "bg-primary" : "bg-gray-200")} />
-              {step > item && <Check className="h-4 w-4 text-primary" />}
+              <div className={cn("h-2 flex-1 rounded-full", progress >= item ? "bg-primary" : "bg-gray-200")} />
+              {progress > item && <Check className="h-4 w-4 text-primary" />}
             </div>
           ))}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {step === 1 && (
+          {step === "account" && (
             <div className="grid gap-4">
               <Field label="Full Name" value={fullName} onChange={setFullName} placeholder="John Doe" />
               <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
@@ -109,7 +145,26 @@ export default function SignupPage() {
             </div>
           )}
 
-          {step === 2 && (
+          {step === "choice" && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <OptionCard
+                  icon={<Building2 className="h-5 w-5" />}
+                  title="Create a Realm"
+                  detail="Start a company workspace and become the Warehouse Owner."
+                  onClick={() => setStep("create")}
+                />
+                <OptionCard
+                  icon={<Users className="h-5 w-5" />}
+                  title="Join a Realm"
+                  detail="Use the 4-digit code from your Warehouse Owner."
+                  onClick={() => setStep("join")}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === "create" && (
             <div className="grid gap-4">
               <Field label="Company Name" value={companyName} onChange={setCompanyName} placeholder="Digital Dumplings Inc." />
               <div>
@@ -129,56 +184,39 @@ export default function SignupPage() {
             </div>
           )}
 
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <OptionCard
-                  active={realmAction === "create"}
-                  icon={<Building2 className="h-5 w-5" />}
-                  title="Create a Realm"
-                  detail="Start a company workspace and become the Warehouse Owner."
-                  onClick={() => setRealmAction("create")}
-                />
-                <OptionCard
-                  active={realmAction === "join"}
-                  icon={<Users className="h-5 w-5" />}
-                  title="Join a Realm"
-                  detail="Use the 4-digit code from your Warehouse Owner."
-                  onClick={() => setRealmAction("join")}
+          {step === "join" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink">Realm Code</label>
+              <div className="relative">
+                <DoorOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+                <input
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  required
+                  className="w-full rounded-md border border-border bg-background py-2.5 pl-10 pr-4 text-sm tracking-[0.4em] outline-none transition focus:ring-2 focus:ring-primary/30"
+                  placeholder="8341"
                 />
               </div>
-
-              {realmAction === "join" && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-ink">Realm Code</label>
-                  <div className="relative">
-                    <DoorOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
-                    <input
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      required
-                      className="w-full rounded-md border border-border bg-background py-2.5 pl-10 pr-4 text-sm tracking-[0.4em] outline-none transition focus:ring-2 focus:ring-primary/30"
-                      placeholder="8341"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
           {error && <div className="rounded-md bg-danger/10 px-4 py-2.5 text-sm text-danger">{error}</div>}
 
           <div className="flex items-center justify-between gap-3">
-            <Button type="button" variant="secondary" disabled={step === 1 || isLoading} onClick={() => setStep((current) => current - 1)}>
+            <Button type="button" variant="secondary" disabled={step === "account" || isLoading} onClick={goBack}>
               Back
             </Button>
-            {step < 3 ? (
-              <Button type="button" onClick={nextStep}>
-                Continue
-              </Button>
+            {step === "choice" ? (
+              <span className="text-sm text-ink-muted">Choose how you want to enter StockLens.</span>
             ) : (
               <Button type="submit" disabled={isLoading}>
-                {isLoading ? "Creating account..." : "Finish Signup"}
+                {step === "account"
+                  ? "Continue"
+                  : isLoading
+                    ? "Creating account..."
+                    : step === "create"
+                      ? "Create Realm & Sign In"
+                      : "Join Realm & Sign In"}
               </Button>
             )}
           </div>
@@ -225,13 +263,11 @@ function Field({
 }
 
 function OptionCard({
-  active,
   icon,
   title,
   detail,
   onClick,
 }: {
-  active: boolean;
   icon: React.ReactNode;
   title: string;
   detail: string;
@@ -241,10 +277,7 @@ function OptionCard({
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "rounded-md border p-4 text-left transition",
-        active ? "border-primary bg-primary/5 text-ink" : "border-border bg-background text-ink-muted hover:border-primary/50"
-      )}
+      className="rounded-md border border-border bg-background p-4 text-left text-ink-muted transition hover:border-primary/50 hover:bg-primary/5 hover:text-ink"
     >
       <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-white text-primary shadow-soft">{icon}</div>
       <p className="text-sm font-semibold text-ink">{title}</p>

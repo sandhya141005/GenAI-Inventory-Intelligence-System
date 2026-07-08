@@ -33,8 +33,8 @@ export interface SignupPayload {
   email: string;
   password: string;
   full_name: string;
-  company_name: string;
-  industry_tag: string;
+  company_name?: string;
+  industry_tag?: string;
   realm_action: "create" | "join";
   join_code?: string;
 }
@@ -59,6 +59,18 @@ function setTokens(tokens: AuthTokens) {
 function clearTokens() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+}
+
+async function parseApiError(response: Response, fallback: string): Promise<string> {
+  const data = await response.json().catch(() => null);
+  const detail = data?.detail ?? data?.message ?? fallback;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg ?? item?.message ?? JSON.stringify(item)).join(", ");
+  }
+  if (detail && typeof detail === "object") {
+    return detail.msg ?? detail.message ?? JSON.stringify(detail);
+  }
+  return String(detail);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -123,8 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Login failed" }));
-      throw new Error(error.detail || "Login failed");
+      throw new Error(await parseApiError(response, "Login failed"));
     }
 
     const tokens: AuthTokens = await response.json();
@@ -142,8 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Signup failed" }));
-      throw new Error(error.detail || "Signup failed");
+      throw new Error(await parseApiError(response, "Signup failed"));
     }
 
     await login(payload.email, payload.password);

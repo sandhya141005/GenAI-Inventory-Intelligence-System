@@ -65,23 +65,39 @@ def create_demo_user() -> None:
         realm.owner_user_id = owner.id
 
         stores = db.query(Store).filter(Store.realm_id == realm.id).order_by(Store.id).all()
-        assigned_stores = [store for store in stores if store.store_type != "warehouse"] or stores
-        if assigned_stores:
+        stores_by_name = {store.name: store for store in stores}
+        default_store = next((store for store in stores if store.store_type != "warehouse"), stores[0] if stores else None)
+
+        chennai_store = stores_by_name.get("Chennai Central") or default_store
+        ambattur_store = stores_by_name.get("Ambattur Hub") or default_store
+        mumbai_store = stores_by_name.get("Mumbai West") or stores_by_name.get("Madurai Store") or default_store
+
+        if chennai_store:
             upsert_user(
                 db,
                 email="chennai.manager@stocklens.local",
                 full_name="Chennai Store Manager",
                 realm_id=realm.id,
                 role=STORE_MANAGER,
-                assigned_store_id=assigned_stores[min(4, len(assigned_stores) - 1)].id,
+                assigned_store_id=chennai_store.id,
             )
+        if ambattur_store:
+            upsert_user(
+                db,
+                email="ambattur@gmail.com",
+                full_name="Ambattur Manager",
+                realm_id=realm.id,
+                role=STORE_MANAGER,
+                assigned_store_id=ambattur_store.id,
+            )
+        if mumbai_store:
             upsert_user(
                 db,
                 email="mumbai.manager@stocklens.local",
                 full_name="Mumbai Store Manager",
                 realm_id=realm.id,
                 role=STORE_MANAGER,
-                assigned_store_id=assigned_stores[0].id,
+                assigned_store_id=mumbai_store.id,
             )
 
         upsert_user(

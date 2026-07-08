@@ -30,6 +30,7 @@ export type InventoryActionType = "CLEARANCE_SALE" | "DONATE" | "DISCARD";
 
 export interface InventoryActionSuggestion {
   product_id: number;
+  store_id?: number | null;
   product_name: string;
   category: string;
   action: InventoryActionType;

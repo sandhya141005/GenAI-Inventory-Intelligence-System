@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from app.models.analytics_data import Product, Sale, Store, WarehouseStock
+from app.models.analytics_data import InventoryStock, Product, Sale, Store
 from app.services.action_engine import InventoryActionInput, SmartInventoryActionEngine
 from app.services.donation_service import DonationService
 
@@ -9,6 +9,7 @@ from app.services.donation_service import DonationService
 def _input(**overrides):
     defaults = {
         "product_id": 1,
+        "store_id": 1,
         "product_name": "Test Product",
         "category": "Accessories",
         "current_stock_qty": 12,
@@ -24,7 +25,7 @@ def _input(**overrides):
 
 def test_discard_wins_for_expired_items(db_session):
     suggestion = SmartInventoryActionEngine(db_session).evaluate(
-        _input(days_to_expiry=0, days_since_last_sold=120, current_stock_qty=80)
+        _input(category="Dairy", days_to_expiry=0, days_since_last_sold=120, current_stock_qty=80)
     )
 
     assert suggestion["action"] == "DISCARD"
@@ -42,7 +43,7 @@ def test_donate_wins_before_clearance_for_non_food_slow_movers(db_session):
 
 def test_clearance_uses_highest_expiry_or_slow_mover_discount(db_session):
     suggestion = SmartInventoryActionEngine(db_session).evaluate(
-        _input(days_to_expiry=6, days_since_last_sold=70, current_stock_qty=4)
+        _input(category="Dairy", days_to_expiry=6, days_since_last_sold=70, current_stock_qty=4)
     )
 
     assert suggestion["action"] == "CLEARANCE_SALE"
@@ -65,7 +66,7 @@ def test_donation_notify_logs_when_smtp_is_not_configured(db_session, monkeypatc
     db_session.add_all([store, product])
     db_session.commit()
 
-    db_session.add(WarehouseStock(product_id=product.id, quantity=25))
+    db_session.add(InventoryStock(product_id=product.id, store_id=store.id, quantity=80))
     db_session.add(
         Sale(
             product_id=product.id,

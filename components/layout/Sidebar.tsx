@@ -7,12 +7,8 @@ import {
   Sparkles,
   Package,
   ListChecks,
-  FileText,
   BarChart3,
-  ArrowLeftRight,
   Clock,
-  Bell,
-  HandHeart,
   Settings,
   Shield,
   LogOut,
@@ -22,16 +18,13 @@ import { useAuth } from "@/lib/auth-context";
 
 const navItems = [
   { href: "/overview", label: "Overview", icon: LayoutGrid },
-  { href: "/", label: "AI Copilot", icon: Sparkles, isSame: true, hideIfHome: true },
+  { href: "/copilot", label: "AI Copilot", icon: Sparkles, matchPaths: ["/copilot"] },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/recommendations", label: "Recommendations", icon: ListChecks },
   { href: "/insights", label: "Insights", icon: BarChart3, matchPaths: ["/insights", "/reports", "/analytics"] },
-  { href: "/transfers", label: "Transfers", icon: ArrowLeftRight },
-  // { href: "/aging", label: "Inventory Aging", icon: Clock },
-  // { href: "/notices", label: "Notice Board", icon: Bell },
-  { href: "/donations", label: "Donation History", icon: HandHeart },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/pastActions", label: "Past Actions", icon: Clock },
+  { href: "/team", label: "Team", icon: Shield, ownerOnly: true },
 ];
 
 // const aiReportItems = [
@@ -52,7 +45,7 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex w-[220px] shrink-0 flex-col border-r border-border bg-surface">
-      <Link href="/" className="flex items-center gap-2 px-5 h-16 border-b border-border">
+      <Link href="/overview" className="flex items-center gap-2 px-5 h-16 border-b border-border">
         <img src="/stocklens-icon.png" alt="StockLens" className="h-7 w-7 rounded-md object-cover" />
         <span className="text-sm font-semibold text-ink tracking-tight">
           StockLens
@@ -62,9 +55,9 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto">
         <nav className="px-3 py-4 space-y-0.5">
           {navItems
-  .filter((item) => !item.hideIfHome)
-  .filter((item) => item.href !== "/settings" || user?.role === "WAREHOUSE_OWNER")
-  .map((item) => {
+            .filter((item) => item.href !== "/settings" || user?.role === "WAREHOUSE_OWNER")
+            .filter((item) => !item.ownerOnly || user?.role === "WAREHOUSE_OWNER")
+            .map((item) => {
     const active = item.matchPaths
       ? item.matchPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
       : pathname === item.href;

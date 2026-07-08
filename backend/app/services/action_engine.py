@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.analytics_data import Product, Sale, Store, InventoryStock
+from app.models.analytics_data import InventoryStock, Product, Sale, Store
 from app.services.orphanages import match_orphanages
 
 ACTION_ENGINE_CONFIG = {
@@ -58,6 +58,7 @@ ACTION_ENGINE_CONFIG = {
 @dataclass(frozen=True)
 class InventoryActionInput:
     product_id: int
+    store_id: int | None
     product_name: str
     category: str
     current_stock_qty: int
@@ -120,41 +121,30 @@ class SmartInventoryActionEngine:
 
         return self._suggestion(item, "NO_ACTION", "Inventory is within action thresholds", None)
     def _action_inputs(self) -> list[InventoryActionInput]:
-        warehouse = self.db.execute(
-            select(Store.id)
-            .where(Store.store_type == "warehouse")
-            .where(*self._store_filters(Store))
-            .order_by(Store.id)
-            .limit(1)
-        ).scalar_one_or_none()
-
-        if warehouse is None:
-            return []
-
         stock_rows = self.db.execute(
-            select(Product, InventoryStock.quantity)
+            select(Product, Store, InventoryStock.quantity)
             .join(InventoryStock, InventoryStock.product_id == Product.id)
-            .where(InventoryStock.store_id == warehouse)
+            .join(Store, Store.id == InventoryStock.store_id)
             .where(*self._realm_filters(Product, InventoryStock))
+            .where(*self._store_filters(Store))
             .order_by(Product.name)
         ).all()
-        last_sale_by_product = self._last_sale_dates()
-        city_by_product = self._latest_sale_city()
-        warehouse_city = self._warehouse_city()
+        last_sale_by_product_store = self._last_sale_dates()
 
         return [
             InventoryActionInput(
                 product_id=product.id,
+                store_id=store.id,
                 product_name=product.name or product.sku or str(product.id),
                 category=product.category or "Uncategorized",
                 current_stock_qty=int(quantity or 0),
-                days_since_last_sold=self._days_since_last_sold(last_sale_by_product.get(product.id)),
+                days_since_last_sold=self._days_since_last_sold(last_sale_by_product_store.get((product.id, store.id))),
                 days_to_expiry=(product.expiry_date - self.today).days if product.expiry_date else None,
                 price=Decimal(product.price or 0),
-                store_city=city_by_product.get(product.id) or warehouse_city,
-                pickup_location=city_by_product.get(product.id) or warehouse_city or "Warehouse",
+                store_city=store.city,
+                pickup_location=store.name or store.city or "Store",
             )
-            for product, quantity in stock_rows
+            for product, store, quantity in stock_rows
         ]
 
     def _is_donation_candidate(self, item: InventoryActionInput) -> bool:
@@ -198,6 +188,7 @@ class SmartInventoryActionEngine:
     ) -> dict:
         return {
             "product_id": item.product_id,
+            "store_id": item.store_id,
             "product_name": item.product_name,
             "category": item.category,
             "action": action,
@@ -231,36 +222,18 @@ class SmartInventoryActionEngine:
     def _is_food(self, category: str) -> bool:
         return category.strip().lower() in ACTION_ENGINE_CONFIG["food_categories"]
 
-    def _last_sale_dates(self) -> dict[int, date]:
+    def _last_sale_dates(self) -> dict[tuple[int, int], date]:
         rows = self.db.execute(
-            select(Sale.product_id, func.max(Sale.sale_date))
-            .where(Sale.product_id.is_not(None))
+            select(Sale.product_id, Sale.store_id, func.max(Sale.sale_date))
+            .where(Sale.product_id.is_not(None), Sale.store_id.is_not(None))
             .where(*self._sale_filters())
-            .group_by(Sale.product_id)
+            .group_by(Sale.product_id, Sale.store_id)
         ).all()
-        return {int(product_id): last_sale for product_id, last_sale in rows if last_sale is not None}
-
-    def _latest_sale_city(self) -> dict[int, str]:
-        rows = self.db.execute(
-            select(Sale.product_id, Store.city, Sale.sale_date)
-            .join(Store, Store.id == Sale.store_id)
-            .where(Sale.product_id.is_not(None), Store.city.is_not(None))
-            .where(*self._sale_filters(), *self._store_filters(Store))
-            .order_by(Sale.product_id, Sale.sale_date.desc())
-        ).all()
-        cities: dict[int, str] = {}
-        for product_id, city, _sale_date in rows:
-            cities.setdefault(int(product_id), city)
-        return cities
-
-    def _warehouse_city(self) -> str | None:
-        return self.db.execute(
-            select(Store.city)
-            .where(Store.store_type == "warehouse", Store.city.is_not(None))
-            .where(*self._store_filters(Store))
-            .order_by(Store.id)
-            .limit(1)
-        ).scalar_one_or_none()
+        return {
+            (int(product_id), int(store_id)): last_sale
+            for product_id, store_id, last_sale in rows
+            if last_sale is not None
+        }
 
     def _realm_filters(self, *models) -> list:
         if self.scope is None:

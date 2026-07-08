@@ -186,7 +186,7 @@ export function SuggestedActionsSection({ suggestions }: SuggestedActionsSection
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(group.items as InventoryActionSuggestion[]).map((suggestion) => (
                   <article
-                    key={`${suggestion.action}-${suggestion.product_id}`}
+                    key={`${suggestion.action}-${suggestion.product_id}-${suggestion.store_id ?? "realm"}`}
                     className="rounded-lg border border-border bg-surface p-4 shadow-soft"
                   >
                     <div className="flex items-start justify-between gap-3">
