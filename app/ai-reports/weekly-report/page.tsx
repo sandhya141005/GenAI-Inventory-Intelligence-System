@@ -5,6 +5,8 @@ import { Sparkles, Loader2, Download } from "lucide-react";
 import { CopilotResponse } from "@/lib/types";
 import { fetchAI } from "@/lib/api";
 import jsPDF from "jspdf";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export default function WeeklyReportPage() {
   const [report, setReport] = useState<CopilotResponse | null>(null);
@@ -153,8 +155,10 @@ export default function WeeklyReportPage() {
             </span>
           </div>
 
-          <div className="prose prose-sm max-w-none text-ink leading-relaxed whitespace-pre-wrap">
-            {report.response}
+          <div className="prose prose-sm max-w-none text-ink leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {report.response}
+            </ReactMarkdown>
           </div>
 
           {Object.keys(report.metadata).length > 0 && (
