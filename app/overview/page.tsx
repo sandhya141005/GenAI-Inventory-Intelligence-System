@@ -68,7 +68,7 @@ export default function OverviewPage() {
         </div>
       </section>
 
-      <section>
+      {/* <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-ink">Today's Recommendations</h2>
           <span className="text-xs text-ink-muted">
@@ -80,7 +80,7 @@ export default function OverviewPage() {
             <RecommendationCard key={rec.id} rec={rec} />
           ))}
         </div>
-      </section>
+      </section> */}
     </div>
   );
 }

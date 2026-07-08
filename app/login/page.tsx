@@ -1,10 +1,11 @@
 "use client";
+import Image from "next/image";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -34,10 +35,17 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-surface p-8 shadow-soft">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
+  <div className="relative h-10 w-10 overflow-hidden rounded-lg">
+  <Image
+    src="/stocklens-icon.png"
+    alt="StockLens Logo"
+    fill
+    className="object-contain"
+  />
+</div>
+</div>
           <div>
-            <h1 className="text-xl font-bold text-ink">Inventory Intelligence</h1>
+            <h1 className="text-xl font-bold text-ink">Stock Lens</h1>
             <p className="text-sm text-ink-muted">Sign in to your account</p>
           </div>
         </div>

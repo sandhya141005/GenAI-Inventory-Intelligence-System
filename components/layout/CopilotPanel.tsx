@@ -9,16 +9,17 @@ import { Button } from "@/components/ui/button";
 import { fetchAI } from "@/lib/api";
 
 const suggestedPrompts = [
-  "Which automotive parts are at risk of stocking out in the next 7 days?",
-  "Show me products with the highest revenue at risk across all stores.",
-  "Recommend inventory transfers to balance stock levels.",
-  "Generate an executive summary of current inventory health.",
-  "What are the top 5 overstocked items that need markdown or transfer?",
-  "Analyze brake components inventory and identify issues.",
-  "Which stores have critical low stock on engine oil and filters?",
-  "Show me the aging inventory report for items over 60 days old.",
+  "Which food items are at risk of going out of stock in the next 7 days?",
+  "Show me products that are nearing their expiry date.",
+  "Recommend inventory transfers to reduce food wastage.",
+  "Generate an executive summary of current food inventory health.",
+  "Which food items have the highest sales this week?",
+  "Identify slow-moving food products that may require discounts.",
+  "Show me dairy products with low stock across all stores.",
+  "Which fruits and vegetables need immediate restocking?",
+  "Analyze beverage inventory and highlight potential shortages.",
+  "Which frozen food items have been in storage for over 30 days?",
 ];
-
 function timestamp() {
   return new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 }
@@ -36,7 +37,8 @@ function createWelcomeMessage(): ChatMessage {
   return {
     id: "initial-ai-welcome",
     role: "assistant",
-    text: "Welcome to the AI Inventory Copilot for Automotive Parts. I'm powered by OpenAI and have access to your complete inventory data across 10 warehouses and stores.\n\nI can help you:\n- Analyze stockout risks and revenue at risk\n- Recommend optimal inventory transfers\n- Generate executive summaries and reports\n- Query inventory data using natural language\n- Identify overstock and aging inventory\n\nAsk me anything about your automotive parts inventory!",
+    text: "Welcome to the AI Food Inventory Copilot. I'm powered by OpenAI and have access to your complete food inventory data across all stores and warehouses.",
+
     timestamp: timestamp(),
   };
 }

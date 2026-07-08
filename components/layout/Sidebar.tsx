@@ -105,7 +105,7 @@ export function Sidebar() {
           )}
         </nav>
 
-        <div className="px-3 pb-4">
+        {/* <div className="px-3 pb-4">
           <div className="pt-3 mt-3 border-t border-border">
             <p className="px-3 pb-2 text-xs font-semibold text-ink-muted uppercase tracking-wide">
               AI Reports
@@ -127,8 +127,8 @@ export function Sidebar() {
                 </Link>
               );
             })}
-          </div>
-        </div>
+          </div> */}
+        {/* </div> */}
       </div>
 
       <div className="p-3 border-t border-border space-y-2">
