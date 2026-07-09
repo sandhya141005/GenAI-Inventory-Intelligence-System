@@ -519,7 +519,7 @@ class AnalyticsService:
             inventory_value = Decimal(inventory) * price
             holding_cost = Decimal(inventory) * cost * HOLDING_COST_RATE / Decimal("365")
             turnover = demand / Decimal(inventory) if inventory > 0 else Decimal("0")
-            stockout_risk = Decimal(inventory) < demand * LEAD_TIME_FACTOR
+            stockout_risk =  inventory < (demand/Decimal("30")) * LEAD_TIME_FACTOR
             overstock = Decimal(inventory) > demand * Decimal("2")
             demand_spike = demand > 0 and previous_demand > 0 and demand >= previous_demand * DEMAND_SPIKE_MULTIPLIER
             health = self._health(days, stockout_risk, overstock)

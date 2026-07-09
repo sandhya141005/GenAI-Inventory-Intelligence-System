@@ -81,10 +81,22 @@ class SmartInventoryActionEngine:
             for item in self._action_inputs()
             if (suggestion := self.evaluate(item))["action"] != "NO_ACTION"
         ]
+        suggestions = self._dedupe_donations(suggestions)
         return sorted(
             suggestions,
             key=lambda item: (item["action"], -(item.get("discount_percent") or 0), item["product_name"]),
         )
+    def _dedupe_donations(self, suggestions: list[dict]) -> list[dict]:
+        donations = [s for s in suggestions if s["action"] == "DONATE"]
+        others = [s for s in suggestions if s["action"] != "DONATE"]
+
+        best_per_product: dict[int, dict] = {}
+        for s in donations:
+            current = best_per_product.get(s["product_id"])
+            if current is None or s["current_stock_qty"] > current["current_stock_qty"]:
+                best_per_product[s["product_id"]] = s
+
+        return others + list(best_per_product.values())
 
     def suggestion_for_product(self, product_id: int) -> dict | None:
         item = next((item for item in self._action_inputs() if item.product_id == product_id), None)
