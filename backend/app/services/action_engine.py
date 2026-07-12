@@ -17,9 +17,9 @@ ACTION_ENGINE_CONFIG = {
         "high_min": 50,
     },
     "donate": {
-        "min_stock_qty": 50,          # NEW — was medium_min(10); now needs real dead-stock volume
-        "non_food_slow_days": 120,    # was 90
-        "food_slow_days": 60,         # was 45
+        "min_stock_qty": 50,          
+        "non_food_slow_days": 120,    
+        "food_slow_days": 60,        
         "food_expiry_buffer_days": 5,
     },
     "clearance": {
@@ -32,10 +32,10 @@ ACTION_ENGINE_CONFIG = {
         "slow_mover_tiers": [
             {"min_days_since_last_sold": 45, "discount_percent": 30},
             {"min_days_since_last_sold": 30, "discount_percent": 20},
-            {"min_days_since_last_sold": 15, "discount_percent": 10},   # NEW tier — catches more items
+            {"min_days_since_last_sold": 15, "discount_percent": 10},   
         ],
-        "bundle_min_stock_qty": 15,        # NEW
-        "bundle_min_days_since_last_sold": 20,  # NEW
+        "bundle_min_stock_qty": 15,    
+        "bundle_min_days_since_last_sold": 20,
     },
    
  
@@ -97,7 +97,6 @@ class SmartInventoryActionEngine:
                 best_per_product[s["product_id"]] = s
 
         return others + list(best_per_product.values())
-
     def suggestion_for_product(self, product_id: int) -> dict | None:
         item = next((item for item in self._action_inputs() if item.product_id == product_id), None)
         if item is None:
@@ -210,8 +209,32 @@ class SmartInventoryActionEngine:
             "current_stock_qty": item.current_stock_qty,
             "store_city": item.store_city,
             "pickup_location": item.pickup_location,
+             "confidence": self._confidence(item), 
         }
+    def _confidence(self, item: InventoryActionInput) -> str:
+        """
+        Confidence = completeness of the data actually backing this suggestion,
+        not model certainty. Applicable signals: inventory (always present),
+        sales history (do we know when it last sold, or is it a total unknown),
+        expiry (only applicable to food).
+        """
+        signals_present = 1  # inventory row always exists if we got this far
+        signals_total = 2    # inventory + sales history
 
+        if item.days_since_last_sold < ACTION_ENGINE_CONFIG["no_sales_days"]:
+            signals_present += 1  # we have a real last-sold date, not a "never sold" default
+
+        if self._is_food(item.category):
+            signals_total += 1
+            if item.days_to_expiry is not None:
+                signals_present += 1
+
+        ratio = signals_present / signals_total
+        if ratio >= 1.0:
+            return "High"
+        if ratio >= 0.5:
+            return "Medium"
+        return "Low"
     def _suggested_recipient(self, item: InventoryActionInput, action: str) -> str | None:
         if action != "DONATE":
             return None
