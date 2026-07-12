@@ -97,6 +97,10 @@ export default function LoginPage() {
           <a href="/signup" className="font-medium text-primary hover:underline">
             Sign up
           </a>
+          <br></br>
+          <Link href="/impact" className="font-medium text-primary hover:underline">
+  View Impact
+</Link>
         </p>
       </div>
     </div>
