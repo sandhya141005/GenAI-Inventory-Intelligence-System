@@ -7,7 +7,7 @@ import { ChatMessageBubble, TypingIndicator } from "@/components/copilot/ChatMes
 import { SuggestedPrompts } from "@/components/copilot/SuggestedPrompts";
 import { Button } from "@/components/ui/button";
 import { fetchAI } from "@/lib/api";
-
+import { VoiceControls, speak,SUPPORTED_LANGUAGES } from "@/components/copilot/VoiceControls";
 const suggestedPrompts = [
   "Which food items are at risk of going out of stock in the next 7 days?",
   "Show me products that are nearing their expiry date.",
@@ -60,7 +60,8 @@ export function CopilotPanel() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>();
-
+  const [voiceLang, setVoiceLang] = useState("en-IN");
+const [speakEnabled, setSpeakEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,23 +100,27 @@ export function CopilotPanel() {
   }
 
   async function handleSend(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      text: trimmed,
-      timestamp: timestamp(),
-    };
+  const userMessage: ChatMessage = {
+    id: crypto.randomUUID(),
+    role: "user",
+    text: trimmed,
+    timestamp: timestamp(),
+  };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsTyping(true);
+  setMessages((prev) => [...prev, userMessage]);
+  setInput("");
+  setIsTyping(true);
 
-    try {
-      const aiResponse = await sendChatMessage(trimmed, conversationId);
+  try {
+    const languageName = SUPPORTED_LANGUAGES.find((l) => l.code === voiceLang)?.label ?? "English";
+    const messageToSend =
+      voiceLang === "en-IN" ? trimmed : `${trimmed}\n\n(Please respond in ${languageName}.)`;
 
+    const aiResponse = await sendChatMessage(messageToSend, conversationId);
+    
       if (aiResponse.conversation_id) {
         setConversationId(aiResponse.conversation_id);
       }
@@ -128,6 +133,7 @@ export function CopilotPanel() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      if (speakEnabled) speak(aiResponse.response, voiceLang);
       loadHistory();
     } catch (error) {
       const errorMessage: ChatMessage = {
@@ -257,7 +263,15 @@ export function CopilotPanel() {
                 handleSend(input);
               }}
               className="flex items-center gap-3"
-            >
+>
+              <VoiceControls
+                lang={voiceLang}
+                onLangChange={setVoiceLang}
+                onTranscript={(text) => handleSend(text)}
+                speakEnabled={speakEnabled}
+                onSpeakEnabledChange={setSpeakEnabled}
+              />
+              
               <input
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
