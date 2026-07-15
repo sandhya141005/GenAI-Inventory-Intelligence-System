@@ -40,9 +40,14 @@ export function TransferCard({ transfer }: { transfer: TransferItem }) {
     setLoading(true);
     setError(null);
     try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const res = await fetch("/api/transfers/initiate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           productId: transfer.productId,
           fromStoreId: transfer.fromStoreId,

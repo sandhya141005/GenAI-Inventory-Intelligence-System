@@ -442,8 +442,22 @@ class AnalyticsService:
             }
             for transfer, product, from_store, to_store in rows
         ]
-        suggestions = [self._transfer_suggestion(metric) for metric in self._inventory_metrics() if metric.demand_spike or metric.stockout_risk]
-        return {"transfers": existing + [suggestion for suggestion in suggestions if suggestion]}
+        all_metrics = self._all_realm_inventory_metrics()
+        suggestions = [
+            self._transfer_suggestion(metric, all_metrics)
+            for metric in all_metrics
+            if metric.demand_spike or metric.stockout_risk
+        ]
+        valid_suggestions = [suggestion for suggestion in suggestions if suggestion]
+
+        if self.scope is not None and getattr(self.scope, "is_store_manager", False):
+            assigned_id = getattr(self.scope, "assigned_store_id", None)
+            valid_suggestions = [
+                s for s in valid_suggestions
+                if s["fromStoreId"] == assigned_id or s["toStoreId"] == assigned_id
+            ]
+
+        return {"transfers": existing + valid_suggestions}
 
     def inventory_aging(self) -> dict:
         items = sorted(self._inventory_metrics(), key=lambda metric: metric.inventory_value, reverse=True)
@@ -559,6 +573,85 @@ class AnalyticsService:
         ).all()
         return {(int(product_id), int(store_id)): int(total or 0) for product_id, store_id, total in rows}
 
+    def _all_realm_inventory_metrics(self) -> list[InventoryMetric]:
+        products = {
+            product.id: product
+            for product in self.db.execute(select(Product)).scalars()
+            if self._in_realm(product)
+        }
+        stores = {
+            store.id: store
+            for store in self.db.execute(select(Store)).scalars()
+            if self._in_realm(store)
+        }
+        stock_by_key = {
+            (row.product_id, row.store_id): int(row.quantity or 0)
+            for row in self.db.execute(self._realm_filter(select(InventoryStock), InventoryStock)).scalars()
+        }
+        sales_30 = self._all_realm_sales_totals(self.last_30_days, self.today)
+        sales_prev = self._all_realm_sales_totals(self.previous_30_days, self.last_30_days - timedelta(days=1))
+
+        keys = set(sales_30) | set(sales_prev) | set(stock_by_key)
+
+        metrics: list[InventoryMetric] = []
+        for product_id, store_id in sorted(keys):
+            product = products.get(product_id)
+            if product is None:
+                continue
+            store = stores.get(store_id)
+            if store is None:
+                continue
+
+            inventory = stock_by_key.get((product_id, store_id), 0)
+            demand = Decimal(sales_30.get((product_id, store_id), 0))
+            previous_demand = Decimal(sales_prev.get((product_id, store_id), 0))
+            price = Decimal(product.price or 0)
+            cost = Decimal(product.cost or 0)
+            avg_daily_sales = demand / Decimal("30")
+            days = Decimal(inventory) / avg_daily_sales if avg_daily_sales > 0 else Decimal("0")
+            revenue_at_risk = Decimal(max(0, int(demand) - inventory)) * price
+            inventory_value = Decimal(inventory) * price
+            holding_cost = Decimal(inventory) * cost * HOLDING_COST_RATE / Decimal("365")
+            turnover = demand / Decimal(inventory) if inventory > 0 else Decimal("0")
+            stockout_risk =  inventory < (demand/Decimal("30")) * LEAD_TIME_FACTOR
+            overstock = Decimal(inventory) > demand * Decimal("2")
+            demand_spike = demand > 0 and previous_demand > 0 and demand >= previous_demand * DEMAND_SPIKE_MULTIPLIER
+            health = self._health(days, stockout_risk, overstock)
+            status = "stockout" if inventory <= 0 else "at-risk" if stockout_risk else "overstock" if overstock else "in-stock"
+            metrics.append(
+                InventoryMetric(
+                    product_id=product.id,
+                    store_id=store.id,
+                    sku=product.sku or str(product.id),
+                    product=product.name or product.sku or str(product.id),
+                    category=product.category or "Uncategorized",
+                    store=store.name or "Unknown",
+                    inventory=inventory,
+                    demand=demand,
+                    avg_daily_sales=avg_daily_sales,
+                    days_of_coverage=days,
+                    revenue_at_risk=revenue_at_risk,
+                    holding_cost=holding_cost,
+                    inventory_age_days=0,
+                    turnover=turnover,
+                    stockout_risk=stockout_risk,
+                    overstock=overstock,
+                    demand_spike=demand_spike,
+                    health=health,
+                    status=status,
+                    inventory_value=inventory_value,
+                )
+            )
+        return metrics
+
+    def _all_realm_sales_totals(self, start: date, end: date) -> dict[tuple[int, int], int]:
+        rows = self.db.execute(
+            self._realm_filter(select(Sale.product_id, Sale.store_id, func.coalesce(func.sum(Sale.quantity), 0)), Sale)
+            .where(Sale.sale_date >= start, Sale.sale_date <= end, Sale.product_id.is_not(None), Sale.store_id.is_not(None))
+            .group_by(Sale.product_id, Sale.store_id)
+        ).all()
+        return {(int(product_id), int(store_id)): int(total or 0) for product_id, store_id, total in rows}
+
     def _inventory_item(self, metric: InventoryMetric) -> dict:
         return {
             "sku": metric.sku,
@@ -572,8 +665,8 @@ class AnalyticsService:
             "status": metric.status,
         }
 
-    def _transfer_suggestion(self, metric: InventoryMetric) -> dict | None:
-        source = next((m for m in self._inventory_metrics() if m.product_id == metric.product_id and m.store_id != metric.store_id and m.overstock), None)
+    def _transfer_suggestion(self, metric: InventoryMetric, all_metrics: list[InventoryMetric]) -> dict | None:
+        source = next((m for m in all_metrics if m.product_id == metric.product_id and m.store_id != metric.store_id and m.overstock), None)
         if source is None:
             return None
         source_surplus = max(1, source.inventory - int(source.demand * 2))
