@@ -33,10 +33,21 @@ def fetch_business_context(intent: str, user_input: str, user_id: int, db: Sessi
     
     try:
         if intent == "nl_query":
+            from app.models.analytics_data import Product
+            
+            valid_categories = []
+            if scope and scope.realm_id:
+                valid_categories = db.query(Product.category).filter(
+                    Product.realm_id == scope.realm_id,
+                    Product.category.isnot(None)
+                ).distinct().order_by(Product.category).all()
+                valid_categories = [cat[0] for cat in valid_categories if cat[0]]
+            
             context["schema_info"] = {
                 "realm_id": scope.realm_id if scope else None,
                 "assigned_store_id": scope.assigned_store_id if scope and scope.is_store_manager else None,
                 "role": scope.role if scope else None,
+                "valid_categories": valid_categories,
                 "tables": [
                     "products (product_id, realm_id, sku, name, category, cost, price, expiry_date)",
                     "stores (store_id, realm_id, name, city, region, store_type)",

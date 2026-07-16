@@ -33,6 +33,31 @@ function MarkdownMessage({ text }: { text: string }) {
       continue;
     }
 
+    // Handle code blocks
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      index += 1;
+      
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      
+      if (index < lines.length) {
+        index += 1; // Skip closing ```
+      }
+      
+      blocks.push(
+        <pre key={index} className="my-3 overflow-x-auto rounded-md bg-gray-900 p-3">
+          <code className="text-xs text-gray-100 font-mono whitespace-pre">
+            {codeLines.join("\n")}
+          </code>
+        </pre>
+      );
+      continue;
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       const level = heading[1].length;
@@ -115,7 +140,8 @@ function MarkdownMessage({ text }: { text: string }) {
       lines[index].trim() &&
       !lines[index].trim().match(/^(#{1,6})\s+/) &&
       !lines[index].trim().startsWith("- ") &&
-      !lines[index].trim().startsWith("|")
+      !lines[index].trim().startsWith("|") &&
+      !lines[index].trim().startsWith("```")
     ) {
       paragraph.push(lines[index].trim());
       index += 1;
